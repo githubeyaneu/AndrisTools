@@ -34,6 +34,13 @@ import java.io.File
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import eu.eyan.util.awt.AwtHelper
 import java.util.concurrent.TimeUnit
+import scala.util.Try
+import java.util.concurrent.Future
+import com.drew.imaging.ImageMetadataReader
+import scala.collection.JavaConverters
+import com.drew.metadata.exif.ExifImageDirectory
+import com.drew.metadata.exif.ExifSubIFDDirectory
+import com.drew.metadata.exif.ExifDirectoryBase
 
 object PVTools extends App {
   Log.activateInfoLevel.redirectSystemOutAndError
@@ -57,13 +64,19 @@ object PVTools extends App {
   panel.newRow.addLabel("ffmpeg.exe location: ")
   val ffmpegPathTextField = panel.nextColumn.addTextField("""C:\private\ffmpeg\bin\ffmpeg.exe""").rememberValueInRegistry("extensionsToConvert")
 
+  panel.newRow.addLabel("exiftool.exe location: ")
+  val exiftoolPathTextField = panel.nextColumn.addTextField("""C:\private\exiftool.exe""").rememberValueInRegistry("exiftool")
+
+  panel.newRow.addLabel("Check interval (s): ")
+  val checkIntervalTextField = panel.nextColumn.addTextField("3600").rememberValueInRegistry("checkInterval")
+
   panel.newRow.addButton("Check to import").onAction_disableEnable(filesToImport)
   val checkToImportLabel = panel.nextColumn.addLabel("")
 
   panel.newRow.addButton("Import").onAction_disableEnable(importFiles)
   val importLabel = panel.nextColumn.addLabel("")
 
-  val frame= new JFrame().title(TITLE).onCloseHide.iconFromChar('I', Color.YELLOW).addToSystemTray().withComponent(panel)
+  val frame = new JFrame().title(TITLE).onCloseHide.iconFromChar('I', Color.YELLOW).addToSystemTray().withComponent(panel)
     .menuItem("File", "Exit", System.exit(0))
     .menuItem("Debug", "Open log window", LogWindow.show(panel))
     .menuItem("Debug", "Copy logs to clipboard", ClipboardPlus.copyToClipboard(Log.getAllLogs))
@@ -73,8 +86,8 @@ object PVTools extends App {
     .packAndSetVisible
 
   val pool = new ScheduledThreadPoolExecutor(1)
-  pool.scheduleAtFixedRate(AwtHelper.runnable(filesToImport), 0, 5, TimeUnit.SECONDS)
-  
+  val future = pool.scheduleAtFixedRate(AwtHelper.runnable(filesToImport), 0, TryCatch(checkIntervalTextField.getText.toInt, e => 3600), TimeUnit.SECONDS)
+
   def writeEmail =
     Desktop.getDesktop.mail(new URI("mailto:PVTools@eyan.eu?subject=Photo%20and%20video%20import&body=" + URLEncoder.encode(Log.getAllLogs, "utf-8").replace("+", "%20")))
 
@@ -96,7 +109,7 @@ object PVTools extends App {
     importLabel.text("Importing")
     val importedFiles = for (fileToImport <- filesToImport) yield {
       val fileName = fileToImport.getName
-      val fileDateTime = fileToImport.lastModifiedTime.toString("yyyyMMdd_HHmmss")
+      val fileDateTime = getDateTime(fileToImport)
       val targetFile = (exportPathTextField.getText + "\\" + fileDateTime + " " + fileName).asFile
       Log.info("Convert or copy " + fileToImport + " to " + targetFile)
       if (convertOrCopy(fileToImport, targetFile)) Option(fileToImport) else None
@@ -120,11 +133,18 @@ object PVTools extends App {
 
       checkToImportLabel.setText(filesToImport.size + " files to import")
       Log.info("Checking files to import: " + filesToImport.size + " files.")
-      if(filesToImport.size>0) frame.state_Normal.visible.toFront
-      
+      if (filesToImport.size > 0) frame.state_Normal.visible.toFront
+
       filesToImport
     }
   }
 
   def alert(msg: String) = JOptionPane.showMessageDialog(null, msg)
+
+  def getDateTime(file: File) = {
+    val exifCmd = exiftoolPathTextField.getText + " -T -DateTimeOriginal \"" + file + "\""
+    val dateTime = exifCmd.executeAsProcessWithResult.output.trim.replace(":", "").replace(" ", "_")
+    if (dateTime.matches("\\d+_\\d+")) dateTime
+    else file.lastModifiedTime.toString("yyyyMMdd_HHmmss")
+  }
 }
