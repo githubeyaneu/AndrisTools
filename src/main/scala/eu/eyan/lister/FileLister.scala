@@ -78,8 +78,8 @@ object FileLister extends App {
   def listFilesOfAllDrives = {
     ct = 0
     val fsv = FileSystemView.getFileSystemView
-    val roots = List("""C:\DEV\projects\AndrisTools\src\test\resources\list""".asFile).map(_.fileTreeWithItself)
-    //    val roots = File.listRoots.filter(_.getAbsolutePath.containsAnyIgnoreCase(ignoreTextField.getText.split(","))).map(_.fileTreeWithItself)
+    //    val roots = List("""C:\DEV\projects\AndrisTools\src\test\resources\list""".asFile).map(_.fileTreeWithItself)
+    val roots = File.listRoots.filter(_.getAbsolutePath.containsAnyIgnoreCase(ignoreTextField.getText.split(","))).map(_.fileTreeWithItself)
     val target = targetTextField.getText.asFile
     if (target.exists) target.renameTo(target.extendFileNameWith("_old").generateNewNameIfExists())
 
