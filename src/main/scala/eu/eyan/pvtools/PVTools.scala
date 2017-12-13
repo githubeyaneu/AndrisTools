@@ -36,12 +36,13 @@ import eu.eyan.util.awt.AwtHelper
 import java.util.concurrent.TimeUnit
 import scala.util.Try
 import java.util.concurrent.Future
-import com.drew.imaging.ImageMetadataReader
 import scala.collection.JavaConverters
-import com.drew.metadata.exif.ExifImageDirectory
-import com.drew.metadata.exif.ExifSubIFDDirectory
-import com.drew.metadata.exif.ExifDirectoryBase
 
+/**
+ * TODO: konfig másodperc -> change, dont react immediately
+ * TODO: auto import
+ * TODO: read only -> nem sikerül videót másolni vagy képet másolni
+ */
 object PVTools extends App {
   Log.activateInfoLevel.redirectSystemOutAndError
   val TITLE = "Photo and video import"
