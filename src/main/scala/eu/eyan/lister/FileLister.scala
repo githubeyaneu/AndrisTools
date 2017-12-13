@@ -34,6 +34,7 @@ import eu.eyan.util.java.time.InstantPlus.InstantImplicit
 import eu.eyan.util.compress.CompressPlus
 import eu.eyan.util.compress.ZipPlus
 import eu.eyan.util.compress.SevenZipPlus
+import eu.eyan.util.scala.CloseFinally
 
 /**
  * To list all the files on all drives. Also search inside the compressed files.
@@ -82,14 +83,9 @@ object FileLister extends App {
     val target = targetTextField.getText.asFile
     if (target.exists) target.renameTo(target.extendFileNameWith("_old").generateNewNameIfExists())
 
-    val bw = new BufferedWriter(new FileWriter(target))
-    TryCatchFinally(
-      roots.foreach {
-        root => root foreach (file => bw.write(logFile(file) + "\r\n"))
-      },
-      e => { Log.error(e); e.printStackTrace },
-      bw.close)
-
+    CloseFinally(
+      new BufferedWriter(new FileWriter(target)),
+      (bw: BufferedWriter) => roots.foreach(_.foreach(file => bw.write(logFile(file) + "\r\n"))))
   }
 
   val DT = "yyyyMMdd HHmmss"
@@ -103,14 +99,14 @@ object FileLister extends App {
 
     val zipContent =
       if (file.endsWith("zip")) {
-        ZipPlus.listFiles(file).map(zip => formatFileLog(path+"\\"+zip.getName, zip.getLastModifiedTime.toInstant, zip.getSize)).mkString("\r\n", "\r\n", "")
+        ZipPlus.listFiles(file).map(zip => formatFileLog(path + "\\" + zip.getName, zip.getLastModifiedTime.toInstant, zip.getSize)).mkString("\r\n", "\r\n", "")
       } else if (file.endsWith("7z", "7zip")) {
-    	  SevenZipPlus.listFiles(file).map(zip => formatFileLog(path+"\\"+zip.getName, zip.getLastModifiedDate.toInstant, zip.getSize)).mkString("\r\n", "\r\n", "")
+        SevenZipPlus.listFiles(file).map(zip => formatFileLog(path + "\\" + zip.getName, zip.getLastModifiedDate.toInstant, zip.getSize)).mkString("\r\n", "\r\n", "")
       } else ""
 
-    formatFileLog(path, date, size)+zipContent
+    formatFileLog(path, date, size) + zipContent
   }
-  
+
   def formatFileLog(path: String, instant: Instant, size: Long) = f"${instant.toString(DT)}  $size%10s  $path"
 
 }
