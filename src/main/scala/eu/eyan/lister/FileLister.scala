@@ -99,9 +99,9 @@ object FileLister extends App {
 
     val zipContent =
       if (file.endsWith("zip")) {
-        ZipPlus.listFiles(file).getOrElse(List()).map(zip => formatFileLog(path + "\\" + zip.getName, zip.getLastModifiedTime.toInstant, zip.getSize)).mkString("\r\n", "\r\n", "")
+        ZipPlus.listFiles(file).map(zip => formatFileLog(path + "\\" + zip.getName, zip.getLastModifiedTime.toInstant, zip.getSize)).mkString("\r\n", "\r\n", "")
       } else if (file.endsWith("7z", "7zip")) {
-        SevenZipPlus.listFiles(file).getOrElse(List()).map(zip => formatFileLog(path + "\\" + zip.getName, zip.getLastModifiedDate.toInstant, zip.getSize)).mkString("\r\n", "\r\n", "")
+        SevenZipPlus.listFiles(file).map(zip => formatFileLog(path + "\\" + zip.getName, zip.getLastModifiedDate.toInstant, zip.getSize)).mkString("\r\n", "\r\n", "")
       } else ""
 
     formatFileLog(path, date, size) + zipContent
