@@ -7,7 +7,6 @@ import eu.eyan.util.awt.clipboard.ClipboardPlus
 import eu.eyan.util.io.FilePlus.FilePlusImplicit
 import eu.eyan.util.java.net.URLPlus.URLImplicit
 import eu.eyan.util.registry.RegistryPlus
-import eu.eyan.util.scala.TryCatch
 import eu.eyan.util.scala.collection.TraversableOncePlus.TraversableOnceImplicit
 import eu.eyan.util.string.StringPlus.StringPlusImplicit
 import eu.eyan.util.swing.JButtonPlus.JButtonImplicit
@@ -87,7 +86,8 @@ object PVTools extends App {
     .packAndSetVisible
 
   val pool = new ScheduledThreadPoolExecutor(1)
-  val future = pool.scheduleAtFixedRate(AwtHelper.runnable(filesToImport), 0, TryCatch(checkIntervalTextField.getText.toInt, e => 3600), TimeUnit.SECONDS)
+  val future = pool.scheduleAtFixedRate(AwtHelper.runnable(filesToImport), 0,
+    try checkIntervalTextField.getText.toInt catch { case _: Throwable => 3600 }, TimeUnit.SECONDS)
 
   def writeEmail =
     Desktop.getDesktop.mail(new URI("mailto:PVTools@eyan.eu?subject=Photo%20and%20video%20import&body=" + URLEncoder.encode(Log.getAllLogs, "utf-8").replace("+", "%20")))

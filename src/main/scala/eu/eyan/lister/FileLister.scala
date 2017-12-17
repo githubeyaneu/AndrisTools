@@ -7,7 +7,6 @@ import eu.eyan.util.awt.clipboard.ClipboardPlus
 import eu.eyan.util.io.FilePlus.FilePlusImplicit
 import eu.eyan.util.java.net.URLPlus.URLImplicit
 import eu.eyan.util.registry.RegistryPlus
-import eu.eyan.util.scala.TryCatch
 import eu.eyan.util.scala.collection.TraversableOncePlus.TraversableOnceImplicit
 import eu.eyan.util.string.StringPlus.StringPlusImplicit
 import eu.eyan.util.swing.JButtonPlus.JButtonImplicit
@@ -34,12 +33,14 @@ import eu.eyan.util.java.time.InstantPlus.InstantImplicit
 import eu.eyan.util.compress.CompressPlus
 import eu.eyan.util.compress.ZipPlus
 import eu.eyan.util.compress.SevenZipPlus
-import eu.eyan.util.scala.CloseFinally
+import eu.eyan.util.scala.TryCatchFinallyClose
 
 /**
  * To list all the files on all drives. Also search inside the compressed files.
  */
 object FileLister extends App {
+  
+  Log.activateDebugLevel
   val TITLE = "File Lister"
 
   val panel = new JPanelWithFrameLayout().withBorders.withSeparators
@@ -83,9 +84,10 @@ object FileLister extends App {
     val target = targetTextField.getText.asFile
     if (target.exists) target.renameTo(target.extendFileNameWith("_old").generateNewNameIfExists())
 
-    CloseFinally(
+    TryCatchFinallyClose(
       new BufferedWriter(new FileWriter(target)),
-      (bw: BufferedWriter) => roots.foreach(_.foreach(file => bw.write(logFile(file) + "\r\n"))))
+      (bw: BufferedWriter) => roots.foreach(_.foreach(file => bw.write(logFile(file) + "\r\n"))),
+      t => Log.error(s"Error opening $target to write",t))
   }
 
   val DT = "yyyyMMdd HHmmss"
@@ -98,9 +100,9 @@ object FileLister extends App {
     val date = Instant.ofEpochMilli(lastModified)
 
     val zipContent =
-      if (file.endsWith("zip")) {
+      if (file.isFile && file.endsWith("zip")) {
         ZipPlus.listFiles(file).map(zip => formatFileLog(path + "\\" + zip.getName, zip.getLastModifiedTime.toInstant, zip.getSize)).mkString("\r\n", "\r\n", "")
-      } else if (file.endsWith("7z", "7zip")) {
+      } else if (file.isFile && file.endsWith("7z", "7zip")) {
         SevenZipPlus.listFiles(file).map(zip => formatFileLog(path + "\\" + zip.getName, zip.getLastModifiedDate.toInstant, zip.getSize)).mkString("\r\n", "\r\n", "")
       } else ""
 
