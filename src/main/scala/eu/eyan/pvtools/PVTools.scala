@@ -36,6 +36,8 @@ import java.util.concurrent.TimeUnit
 import scala.util.Try
 import java.util.concurrent.Future
 import scala.collection.JavaConverters
+import eu.eyan.util.scala.TryCatchFinallyClose
+import scala.io.BufferedSource
 
 /**
  * TODO: konfig másodperc -> change, dont react immediately
@@ -97,6 +99,11 @@ object PVTools extends App {
     Log.info("Converting " + in + " to " + targetVideo)
     val convertBat = s"""${ffmpegPathTextField.getText} -i "$in" -vf yadif -vcodec mpeg4 -b:v 17M -acodec libmp3lame -b:a 192k "$targetVideo""""
     convertBat.executeAsBatchFile()
+    // frame=  264 fps= 65 q=2.0 size=   19200kB time=00:00:10.52 bitrate=14951.1kbits/s speed= 2.6x
+    // 231 MB = 231 000 000
+    // 
+    // 99 270 kB 
+    // 96 745 kB
     true
   }
 
@@ -108,7 +115,9 @@ object PVTools extends App {
 
   def importFiles = {
     importLabel.text("Importing")
-    val importedFiles = for (fileToImport <- filesToImport) yield {
+    val files = filesToImport
+    val filesToImportSizeSum = files.map(_.length).sum
+    val importedFiles = for (fileToImport <- files) yield {
       val fileName = fileToImport.getName
       val fileDateTime = getDateTime(fileToImport)
       val targetFile = (exportPathTextField.getText + "\\" + fileDateTime + " " + fileName).asFile
@@ -121,7 +130,7 @@ object PVTools extends App {
   }
 
   def alreadyImportedFile = (exportPathTextField.getText + "\\alreadyImported.txt").asFile
-  def alreadyImportedFiles = (if (alreadyImportedFile.existsAndFile) Source.fromFile(alreadyImportedFile).getLines.toList else List()).map(_.asFile)
+  def alreadyImportedFiles = alreadyImportedFile.linesList.map(_.asFile)
 
   def filesToImport = {
     Log.info("Checking files to import")
@@ -131,8 +140,9 @@ object PVTools extends App {
     else {
       val allFiles = importPathTextField.getText.asDir.subFiles.toList.filter(_.endsWith(extensionsToImportTextField.getText.split(","): _*))
       val filesToImport = allFiles.diff(alreadyImportedFiles)
+      val filesToImportSizeSum = filesToImport.map(_.length).sum
 
-      checkToImportLabel.setText(filesToImport.size + " files to import")
+      checkToImportLabel.setText(filesToImport.size + " files to import, "+(filesToImportSizeSum/1024/1024)+"MB")
       Log.info("Checking files to import: " + filesToImport.size + " files.")
       if (filesToImport.size > 0) frame.state_Normal.visible.toFront
 
