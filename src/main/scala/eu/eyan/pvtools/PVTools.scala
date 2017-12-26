@@ -38,6 +38,7 @@ import java.util.concurrent.Future
 import scala.collection.JavaConverters
 import eu.eyan.util.scala.TryCatchFinallyClose
 import scala.io.BufferedSource
+import eu.eyan.util.swing.JProgressBarPlus
 
 /**
  * TODO: konfig másodperc -> change, dont react immediately
@@ -51,10 +52,10 @@ object PVTools extends App {
   val panel = new JPanelWithFrameLayout().withBorders.withSeparators
     .newColumn.newColumnFPG
 
-  panel.newRow.addLabel("Import path: ")
+  panel.newRow.addLabel("Import path: ").cursor_HAND_CURSOR.onClicked(importPathTextField.getText.openAsFile)
   val importPathTextField = panel.nextColumn.addTextField("").rememberValueInRegistry("importPath")
 
-  panel.newRow.addLabel("Export path: ")
+  panel.newRow.addLabel("Export path: ").cursor_HAND_CURSOR.onClicked(exportPathTextField.getText.openAsFile)
   val exportPathTextField = panel.nextColumn.addTextField("").rememberValueInRegistry("exportPath")
 
   panel.newRow.addLabel("Files to import: ")
@@ -72,11 +73,14 @@ object PVTools extends App {
   panel.newRow.addLabel("Check interval (s): ")
   val checkIntervalTextField = panel.nextColumn.addTextField("3600").rememberValueInRegistry("checkInterval")
 
-  panel.newRow.addButton("Check to import").onAction_disableEnable(filesToImport)
+  val checkToImportButton = panel.newRow.addButton("Check to import").onAction_disableEnable(checkFilesToImport)
   val checkToImportLabel = panel.nextColumn.addLabel("")
 
   panel.newRow.addButton("Import").onAction_disableEnable(importFiles)
   val importLabel = panel.nextColumn.addLabel("")
+
+  panel.newRow.addLabel("Progress")
+  val progressBar = panel.nextColumn.addProgressBar()
 
   val frame = new JFrame().title(TITLE).onCloseHide.iconFromChar('I', Color.YELLOW).addToSystemTray().withComponent(panel)
     .menuItem("File", "Exit", System.exit(0))
@@ -88,17 +92,16 @@ object PVTools extends App {
     .packAndSetVisible
 
   val pool = new ScheduledThreadPoolExecutor(1)
-  val future = pool.scheduleAtFixedRate(AwtHelper.runnable(filesToImport), 0,
-    try checkIntervalTextField.getText.toInt catch { case _: Throwable => 3600 }, TimeUnit.SECONDS)
+  val future = pool.scheduleAtFixedRate(AwtHelper.runnable(checkFilesToImport), 3600, checkIntervalTextField.getText.toIntOrElse(3600), TimeUnit.SECONDS)
 
   def writeEmail =
     Desktop.getDesktop.mail(new URI("mailto:PVTools@eyan.eu?subject=Photo%20and%20video%20import&body=" + URLEncoder.encode(Log.getAllLogs, "utf-8").replace("+", "%20")))
 
-  def convertVideo(in: File, out: File) = {
+  def convertVideo(in: File, out: File, progress: Int => Unit) = {
     val targetVideo = out.withoutExtension + ".mp4"
     Log.info("Converting " + in + " to " + targetVideo)
-    val convertBat = s"""${ffmpegPathTextField.getText} -i "$in" -vf yadif -vcodec mpeg4 -b:v 17M -acodec libmp3lame -b:a 192k "$targetVideo""""
-    convertBat.executeAsBatchFile()
+    val convertBat = s"""${ffmpegPathTextField.getText} -i "$in" -vf yadif -vcodec mpeg4 -b:v 17M -acodec libmp3lame -b:a 192k -y "$targetVideo""""
+    val success = convertBat.executeAsProcessWithResultAndOutputLineCallback(s => s.findGroup("size= *(\\d*)kB".r).foreach(kB => progress(kB.toInt * 1024)))
     // frame=  264 fps= 65 q=2.0 size=   19200kB time=00:00:10.52 bitrate=14951.1kbits/s speed= 2.6x
     // 231 MB = 231 000 000
     // 
@@ -109,45 +112,59 @@ object PVTools extends App {
 
   def isVideoToConvert(file: File) = file.endsWith(extensionsToConvertTextField.getText.split(","): _*)
 
-  def convertOrCopy(fileToImport: File, targetFile: File) =
-    if (isVideoToConvert(fileToImport)) convertVideo(fileToImport, targetFile)
+  def convertOrCopy(fileToImport: File, targetFile: File, progress: Int => Unit) =
+    if (isVideoToConvert(fileToImport)) convertVideo(fileToImport, targetFile, progress)
     else fileToImport.copyTo(targetFile)
 
   def importFiles = {
     importLabel.text("Importing")
-    val files = filesToImport
+    val files = checkFilesToImport
     val filesToImportSizeSum = files.map(_.length).sum
+    var progressBytes = 0L
+    progressBar.setString("0%")
+    def setProgress(bytes: Long) = progressBar.percentChanged(if (filesToImportSizeSum == 0) 0 else (bytes*100 / filesToImportSizeSum).toInt)
+
     val importedFiles = for (fileToImport <- files) yield {
       val fileName = fileToImport.getName
       val fileDateTime = getDateTime(fileToImport)
       val targetFile = (exportPathTextField.getText + "\\" + fileDateTime + " " + fileName).asFile
       Log.info("Convert or copy " + fileToImport + " to " + targetFile)
-      if (convertOrCopy(fileToImport, targetFile)) Option(fileToImport) else None
+      val result = if (convertOrCopy(fileToImport, targetFile, bytes => setProgress(progressBytes + bytes))) Option(fileToImport) else None
+      progressBytes += fileToImport.length
+      setProgress(progressBytes)
+      result
     }
+
     val newList = alreadyImportedFiles ++ importedFiles.flatten
     newList.mkStringNL.writeToFile(alreadyImportedFile)
     importLabel.text("Import finished")
+    progressBar.finished
   }
 
   def alreadyImportedFile = (exportPathTextField.getText + "\\alreadyImported.txt").asFile
   def alreadyImportedFiles = alreadyImportedFile.linesList.map(_.asFile)
 
-  def filesToImport = {
+  def checkFilesToImport: List[File] = {
     Log.info("Checking files to import")
-    if (!importPathTextField.getText.asDir.existsAndDir) { alert("Import dir does not exists."); List() }
+    checkToImportButton.setEnabled(false)
+    try if (!importPathTextField.getText.asDir.existsAndDir) { alert("Import dir does not exists."); List() }
     else if (!exportPathTextField.getText.asDir.existsAndDir) { alert("Export dir does not exists."); List() }
     else if (ffmpegPathTextField.getText.asFile.notExists) { alert("ffmpeg does not exists."); List() }
     else {
       val allFiles = importPathTextField.getText.asDir.subFiles.toList.filter(_.endsWith(extensionsToImportTextField.getText.split(","): _*))
+      Log.trace("allFiles\r\n" + allFiles.mkStringNL)
+      Log.trace("\r\nalreadyImportedFiles\r\n" + alreadyImportedFiles.mkStringNL)
       val filesToImport = allFiles.diff(alreadyImportedFiles)
+      Log.trace("filesToImport " + filesToImport.mkStringNL)
       val filesToImportSizeSum = filesToImport.map(_.length).sum
 
-      checkToImportLabel.setText(filesToImport.size + " files to import, "+(filesToImportSizeSum/1024/1024)+"MB")
+      checkToImportLabel.setText(filesToImport.size + " files to import, " + (filesToImportSizeSum / 1024 / 1024) + "MB")
       Log.info("Checking files to import: " + filesToImport.size + " files.")
       if (filesToImport.size > 0) frame.state_Normal.visible.toFront
 
       filesToImport
     }
+    finally checkToImportButton.setEnabled(true)
   }
 
   def alert(msg: String) = JOptionPane.showMessageDialog(null, msg)
