@@ -101,13 +101,8 @@ object PVTools extends App {
     val targetVideo = out.withoutExtension + ".mp4"
     Log.info("Converting " + in + " to " + targetVideo)
     val convertBat = s"""${ffmpegPathTextField.getText} -i "$in" -vf yadif -vcodec mpeg4 -b:v 17M -acodec libmp3lame -b:a 192k -y "$targetVideo""""
-    val success = convertBat.executeAsProcessWithResultAndOutputLineCallback(s => s.findGroup("size= *(\\d*)kB".r).foreach(kB => progress(kB.toInt * 1024)))
-    // frame=  264 fps= 65 q=2.0 size=   19200kB time=00:00:10.52 bitrate=14951.1kbits/s speed= 2.6x
-    // 231 MB = 231 000 000
-    // 
-    // 99 270 kB 
-    // 96 745 kB
-    true
+    val exitCode = convertBat.executeAsProcessWithResultAndOutputLineCallback(s => s.findGroup("size= *(\\d*)kB".r).foreach(kB => progress(kB.toInt * 1024)))
+    exitCode == 0
   }
 
   def isVideoToConvert(file: File) = file.endsWith(extensionsToConvertTextField.getText.split(","): _*)
