@@ -39,6 +39,7 @@ import scala.collection.JavaConverters
 import eu.eyan.util.scala.TryCatchFinallyClose
 import scala.io.BufferedSource
 import eu.eyan.util.swing.JProgressBarPlus
+import javax.swing.JTextField
 
 /**
  * TODO: konfig másodperc -> change, dont react immediately
@@ -79,8 +80,11 @@ object PVTools extends App {
   panel.newRow.addButton("Import").onAction_disableEnable(importFiles)
   val importLabel = panel.nextColumn.addLabel("")
 
-  panel.newRow.addLabel("Progress")
+  panel.newRow.addLabel("Progress:")
   val progressBar = panel.nextColumn.addProgressBar()
+
+  panel.newRow.addLabel("More import pathes:")
+  val moreImport = panel.nextColumn.addMore(new JTextField(""))
 
   val frame = new JFrame().title(TITLE).onCloseHide.iconFromChar('I', Color.YELLOW).addToSystemTray().withComponent(panel)
     .menuItem("File", "Exit", System.exit(0))

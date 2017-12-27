@@ -149,6 +149,19 @@
 <!-- 		  <version>2.11.0</version> -->
 <!-- 		</dependency> -->
 
+		<!-- For 7zip -->
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-compress</artifactId>
+			<version>1.13</version>
+		</dependency>
+		<!-- For 7zip -->
+		<dependency>
+			<groupId>org.tukaani</groupId>
+			<artifactId>xz</artifactId>
+			<version>1.6</version>
+		</dependency>
+
 	</dependencies>
 
 </project>
