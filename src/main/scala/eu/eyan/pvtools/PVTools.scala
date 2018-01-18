@@ -47,7 +47,7 @@ import javax.swing.JTextField
  * TODO: read only -> nem sikerül videót másolni vagy képet másolni
  */
 object PVTools extends App {
-  Log.activateInfoLevel.redirectSystemOutAndError
+  Log.activateInfoLevel.redirectSystemOutAndErrToLogWindow
   val TITLE = "Photo and video import"
 
   val panel = new JPanelWithFrameLayout().withBorders.withSeparators
