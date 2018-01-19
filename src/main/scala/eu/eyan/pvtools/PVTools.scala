@@ -50,7 +50,7 @@ import javax.swing.JTextField
 object PVTools extends App {
   Log.activateInfoLevel.redirectSystemOutAndErrToLogWindow
 
-/***************************  UI  ***************************************************/
+  /***************************  UI  ***************************************************/
 
   val TITLE = "Photo and video import"
 
@@ -207,12 +207,17 @@ object PVTools extends App {
 
   def getDateTime(file: File) = {
     val exifCmd = exiftoolPathTextField.getText + " -T -DateTimeOriginal \"" + file + "\""
-    val dateTime = exifCmd.executeAsProcessWithResult.output.map(_.trim.replace(":", "").replace(" ", "_"))
-    if (dateTime.nonEmpty) {
-      val ret = if (dateTime.get.matches("\\d+_\\d+")) dateTime.get
-      else file.lastModifiedTime.toString("yyyyMMdd_HHmmss")
-      Log.info(s"find out date time of $file dateTime=${dateTime.get} result=$ret")
-      ret
+
+    val exifDateTimeOption = exifCmd.executeAsProcessWithResult.output
+    if (exifDateTimeOption.nonEmpty) {
+      val exifDateTime = exifDateTimeOption.get
+      val clearedExifDateTime = exifDateTime.trim.replace(":", "").replace(" ", "_").replaceAll("\\+\\d*.DST", "")
+
+      val dateTime =
+        if (clearedExifDateTime.matches("\\d+_\\d+")) clearedExifDateTime
+        else file.lastModifiedTime.toString("yyyyMMdd_HHmmss")
+      Log.info(s"find out date time of $file exifDateTime=$exifDateTime clearedExifDateTime=$clearedExifDateTime dateTime=$dateTime")
+      dateTime
     } else throw new Exception(s"Error reading dateTime form $file")
   }
 }
