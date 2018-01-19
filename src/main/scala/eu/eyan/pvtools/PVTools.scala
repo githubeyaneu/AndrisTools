@@ -45,6 +45,7 @@ import javax.swing.JTextField
  * TODO: konfig másodperc -> change, dont react immediately
  * TODO: auto import
  * TODO: read only -> nem sikerül videót másolni vagy képet másolni
+ * TODO: fájlonként mentse az exportot
  */
 object PVTools extends App {
   Log.activateInfoLevel.redirectSystemOutAndError
@@ -95,8 +96,8 @@ object PVTools extends App {
     .menuItem("Help", "About", alert("This is not an official tool, no responsibilities are taken. Use it at your own risk."))
     .packAndSetVisible
 
-  val pool = new ScheduledThreadPoolExecutor(1)
-  val future = pool.scheduleAtFixedRate(AwtHelper.runnable(checkFilesToImport), 3600, checkIntervalTextField.getText.toIntOrElse(3600), TimeUnit.SECONDS)
+//  val pool = new ScheduledThreadPoolExecutor(1)
+//  val future = pool.scheduleAtFixedRate(AwtHelper.runnable(checkFilesToImport), 3600, checkIntervalTextField.getText.toIntOrElse(3600), TimeUnit.SECONDS)
 
   def writeEmail =
     Desktop.getDesktop.mail(new URI("mailto:PVTools@eyan.eu?subject=Photo%20and%20video%20import&body=" + URLEncoder.encode(Log.getAllLogs, "utf-8").replace("+", "%20")))
@@ -120,7 +121,7 @@ object PVTools extends App {
     val files = checkFilesToImport
     val filesToImportSizeSum = files.map(_.length).sum
     var progressBytes = 0L
-    progressBar.setString("0%")
+    progressBar percentChanged 0
     def setProgress(bytes: Long) = progressBar.percentChanged(if (filesToImportSizeSum == 0) 0 else (bytes*100 / filesToImportSizeSum).toInt)
 
     val importedFiles = for (fileToImport <- files) yield {
@@ -170,7 +171,7 @@ object PVTools extends App {
 
   def getDateTime(file: File) = {
     val exifCmd = exiftoolPathTextField.getText + " -T -DateTimeOriginal \"" + file + "\""
-    val dateTime = exifCmd.executeAsProcessWithResult.output.trim.replace(":", "").replace(" ", "_")
+    val dateTime = exifCmd.executeAsProcessWithResult.output.trim.replace(":", "").replace(" ", "_").replace("\\+\\d*_DST","")
     if (dateTime.matches("\\d+_\\d+")) dateTime
     else file.lastModifiedTime.toString("yyyyMMdd_HHmmss")
   }
