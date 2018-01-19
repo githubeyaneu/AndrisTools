@@ -48,25 +48,31 @@ import javax.swing.JTextField
  */
 object PVTools extends App {
   Log.activateInfoLevel.redirectSystemOutAndErrToLogWindow
+
+/***************************  UI  ***************************************************/
+
   val TITLE = "Photo and video import"
 
   val panel = new JPanelWithFrameLayout().withBorders.withSeparators
     .newColumn.newColumnFPG
 
   panel.newRow.addLabel("Import path: ").cursor_HAND_CURSOR.onClicked(importPathTextField.getText.openAsFile)
-  val importPathTextField = panel.nextColumn.addTextField("").rememberValueInRegistry("importPath")
+  val importPathTextField = panel.nextColumn.addTextField("", 30).rememberValueInRegistry("importPath")
 
   panel.newRow.addLabel("Export path: ").cursor_HAND_CURSOR.onClicked(exportPathTextField.getText.openAsFile)
   val exportPathTextField = panel.nextColumn.addTextField("").rememberValueInRegistry("exportPath")
+
+  panel.newRow.addLabel("Local temp path: ").cursor_HAND_CURSOR.onClicked(tempPathTextField.getText.openAsFile)
+  val tempPathTextField = panel.nextColumn.addTextField("").rememberValueInRegistry("tempPath")
 
   panel.newRow.addLabel("Files to import: ")
   val extensionsToImportTextField = panel.nextColumn.addTextField("JPG,MTS").rememberValueInRegistry("extensionsToImport")
 
   panel.newRow.addLabel("Files to convert: ")
-  val extensionsToConvertTextField = panel.nextColumn.addTextField("MTS").rememberValueInRegistry("extensionsToConvert")
+  val extensionsToConvertTextField = panel.nextColumn.addTextField("MTS,m2ts").rememberValueInRegistry("extensionsToConvert")
 
   panel.newRow.addLabel("ffmpeg.exe location: ")
-  val ffmpegPathTextField = panel.nextColumn.addTextField("""C:\private\ffmpeg\bin\ffmpeg.exe""").rememberValueInRegistry("extensionsToConvert")
+  val ffmpegPathTextField = panel.nextColumn.addTextField("""C:\private\ffmpeg\bin\ffmpeg.exe""").rememberValueInRegistry("ffmpeg")
 
   panel.newRow.addLabel("exiftool.exe location: ")
   val exiftoolPathTextField = panel.nextColumn.addTextField("""C:\private\exiftool.exe""").rememberValueInRegistry("exiftool")
@@ -86,7 +92,7 @@ object PVTools extends App {
   panel.newRow.addLabel("More import pathes:")
   val moreImport = panel.nextColumn.addMore(new JTextField(""))
 
-  val frame = new JFrame().title(TITLE).onCloseHide.iconFromChar('I', Color.YELLOW).addToSystemTray().withComponent(panel)
+  val frame = new JFrame().title(TITLE).onCloseHide.iconFromChar('I', Color.ORANGE).addToSystemTray().withComponent(panel)
     .menuItem("File", "Exit", System.exit(0))
     .menuItem("Debug", "Open log window", LogWindow.show(panel))
     .menuItem("Debug", "Copy logs to clipboard", ClipboardPlus.copyToClipboard(Log.getAllLogs))
@@ -94,60 +100,74 @@ object PVTools extends App {
     .menuItem("Help", "Write email", writeEmail)
     .menuItem("Help", "About", alert("This is not an official tool, no responsibilities are taken. Use it at your own risk."))
     .packAndSetVisible
+    .center
 
-  val pool = new ScheduledThreadPoolExecutor(1)
-  val future = pool.scheduleAtFixedRate(AwtHelper.runnable(checkFilesToImport), 3600, checkIntervalTextField.getText.toIntOrElse(3600), TimeUnit.SECONDS)
-
-  def writeEmail =
-    Desktop.getDesktop.mail(new URI("mailto:PVTools@eyan.eu?subject=Photo%20and%20video%20import&body=" + URLEncoder.encode(Log.getAllLogs, "utf-8").replace("+", "%20")))
-
-  def convertVideo(in: File, out: File, progress: Int => Unit) = {
-    val targetVideo = out.withoutExtension + ".mp4"
-    Log.info("Converting " + in + " to " + targetVideo)
-    val convertBat = s"""${ffmpegPathTextField.getText} -i "$in" -vf yadif -vcodec mpeg4 -b:v 17M -acodec libmp3lame -b:a 192k -y "$targetVideo""""
-    val exitCode = convertBat.executeAsProcessWithResultAndOutputLineCallback(s => s.findGroup("size= *(\\d*)kB".r).foreach(kB => progress(kB.toInt * 1024)))
-    exitCode == 0
-  }
-
-  def isVideoToConvert(file: File) = file.endsWith(extensionsToConvertTextField.getText.split(","): _*)
-
-  def convertOrCopy(fileToImport: File, targetFile: File, progress: Int => Unit) =
-    if (isVideoToConvert(fileToImport)) convertVideo(fileToImport, targetFile, progress)
-    else fileToImport.copyTo(targetFile)
+/***************************  LOGIC  ***************************************************/
 
   def importFiles = {
     importLabel.text("Importing")
+
     val files = checkFilesToImport
+
+    // calculate size
     val filesToImportSizeSum = files.map(_.length).sum
     var progressBytes = 0L
     progressBar.setString("0%")
-    def setProgress(bytes: Long) = progressBar.percentChanged(if (filesToImportSizeSum == 0) 0 else (bytes*100 / filesToImportSizeSum).toInt)
+    def setProgress(bytes: Long) = progressBar.percentChanged(if (filesToImportSizeSum == 0) 0 else (bytes * 100 / filesToImportSizeSum).toInt)
 
     val importedFiles = for (fileToImport <- files) yield {
-      val fileName = fileToImport.getName
-      val fileDateTime = getDateTime(fileToImport)
-      val targetFile = (exportPathTextField.getText + "\\" + fileDateTime + " " + fileName).asFile
-      Log.info("Convert or copy " + fileToImport + " to " + targetFile)
-      val result = if (convertOrCopy(fileToImport, targetFile, bytes => setProgress(progressBytes + bytes))) Option(fileToImport) else None
-      progressBytes += fileToImport.length
-      setProgress(progressBytes)
-      result
+      try {
+        Log.info("---------------------------------------------")
+        val tempFile = fileToImport.copyToDir(tempPathTextField.getText.asDir)
+
+        val importResult =
+          if (tempFile.nonEmpty) {
+            val fileName = tempFile.get.getName
+
+            val fileDateTime = getDateTime(fileToImport)
+            val targetFile = (exportPathTextField.getText + "\\" + fileDateTime + " " + fileName).asFile
+            Log.info("Convert or copy " + fileToImport + " to " + targetFile)
+
+            // Import File
+            val importResult =
+              if (isVideoToConvert(fileToImport)) convertVideo(fileToImport, targetFile, bytes => setProgress(progressBytes + bytes))
+              else fileToImport.copyTo(targetFile)
+            Log.info("Import result " + fileToImport + " = " + importResult)
+
+            val deleteTempSuccess = tempFile.get.delete
+            Log.info(s"Delete temp: $tempFile $deleteTempSuccess")
+
+            importResult
+          } else {
+            Log.error("Cannot copy " + fileToImport + " to " + tempPathTextField.getText.asDir)
+            false
+          }
+
+        progressBytes += fileToImport.length
+        setProgress(progressBytes)
+
+        if (importResult) {
+          Option(fileToImport)
+          val newList = alreadyImportedFiles ++ List(fileToImport)
+          newList.mkStringNL.writeToFile(alreadyImportedFile)
+        } else {
+          None
+        }
+      } catch {
+        case e: Throwable => Log.error(e)
+      }
     }
 
-    val newList = alreadyImportedFiles ++ importedFiles.flatten
-    newList.mkStringNL.writeToFile(alreadyImportedFile)
     importLabel.text("Import finished")
     progressBar.finished
   }
-
-  def alreadyImportedFile = (exportPathTextField.getText + "\\alreadyImported.txt").asFile
-  def alreadyImportedFiles = alreadyImportedFile.linesList.map(_.asFile)
 
   def checkFilesToImport: List[File] = {
     Log.info("Checking files to import")
     checkToImportButton.setEnabled(false)
     try if (!importPathTextField.getText.asDir.existsAndDir) { alert("Import dir does not exists."); List() }
     else if (!exportPathTextField.getText.asDir.existsAndDir) { alert("Export dir does not exists."); List() }
+    else if (!tempPathTextField.getText.asDir.existsAndDir) { alert("Temp dir does not exists."); List() }
     else if (ffmpegPathTextField.getText.asFile.notExists) { alert("ffmpeg does not exists."); List() }
     else {
       val allFiles = importPathTextField.getText.asDir.subFiles.toList.filter(_.endsWith(extensionsToImportTextField.getText.split(","): _*))
@@ -166,12 +186,34 @@ object PVTools extends App {
     finally checkToImportButton.setEnabled(true)
   }
 
+  def writeEmail =
+    Desktop.getDesktop.mail(new URI("mailto:PVTools@eyan.eu?subject=Photo%20and%20video%20import&body=" + URLEncoder.encode(Log.getAllLogs, "utf-8").replace("+", "%20")))
+
+  def convertVideo(in: File, out: File, progress: Int => Unit) = {
+    val targetVideo = out.withoutExtension + ".mp4"
+    Log.info("Converting " + in + " to " + targetVideo)
+    val convertBat = s"""${ffmpegPathTextField.getText} -i "$in" -vf yadif -vcodec mpeg4 -b:v 17M -acodec libmp3lame -b:a 192k -y "$targetVideo""""
+    val exitCode = convertBat.executeAsProcessWithResultAndOutputLineCallback(s => s.findGroup("size= *(\\d*)kB".r).foreach(kB => progress(kB.toInt * 1024)))
+    Log.info("Converting exitCode=" + exitCode)
+    exitCode == 0
+  }
+
+  def isVideoToConvert(file: File) = file.endsWith(extensionsToConvertTextField.getText.split(","): _*)
+
+  def alreadyImportedFile = (exportPathTextField.getText + "\\alreadyImported.txt").asFile
+  // TODO implement File.lift...
+  def alreadyImportedFiles = if (alreadyImportedFile.exists) alreadyImportedFile.linesList.map(_.asFile) else List()
+
   def alert(msg: String) = JOptionPane.showMessageDialog(null, msg)
 
   def getDateTime(file: File) = {
     val exifCmd = exiftoolPathTextField.getText + " -T -DateTimeOriginal \"" + file + "\""
-    val dateTime = exifCmd.executeAsProcessWithResult.output.trim.replace(":", "").replace(" ", "_")
-    if (dateTime.matches("\\d+_\\d+")) dateTime
-    else file.lastModifiedTime.toString("yyyyMMdd_HHmmss")
+    val dateTime = exifCmd.executeAsProcessWithResult.output.map(_.trim.replace(":", "").replace(" ", "_"))
+    if (dateTime.nonEmpty) {
+      val ret = if (dateTime.get.matches("\\d+_\\d+")) dateTime.get
+      else file.lastModifiedTime.toString("yyyyMMdd_HHmmss")
+      Log.info(s"find out date time of $file dateTime=${dateTime.get} result=$ret")
+      ret
+    } else throw new Exception(s"Error reading dateTime form $file")
   }
 }
