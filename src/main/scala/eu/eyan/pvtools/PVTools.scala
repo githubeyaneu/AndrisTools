@@ -121,7 +121,7 @@ object PVTools extends App {
     val filesToImportSizeSum = files.map(_.length).sum
     var progressBytes = 0L
     progressBar.setString("0%")
-    def setProgress(bytes: Long) = progressBar.percentChanged(if (filesToImportSizeSum == 0) 0 else (bytes*100 / filesToImportSizeSum).toInt)
+    def setProgress(bytes: Long) = progressBar.percentChanged(if (filesToImportSizeSum == 0) 0 else (bytes * 100 / filesToImportSizeSum).toInt)
 
     val importedFiles = for (fileToImport <- files) yield {
       val fileName = fileToImport.getName
@@ -169,8 +169,13 @@ object PVTools extends App {
   def alert(msg: String) = JOptionPane.showMessageDialog(null, msg)
 
   def getDateTime(file: File) = {
+    //    video
+    //    Date/Time Original              : 2017:12:28 11:53:48+02:00 DST
+    //
+    //    kép
+    //    Date/Time Original              : 2017:12:28 11:48:14
     val exifCmd = exiftoolPathTextField.getText + " -T -DateTimeOriginal \"" + file + "\""
-    val dateTime = exifCmd.executeAsProcessWithResult.output.trim.replace(":", "").replace(" ", "_")
+    val dateTime = exifCmd.executeAsProcessWithResult.output.trim.replace(":", "").replace(" ", "_").replace("\\+\\d*_DST","")
     if (dateTime.matches("\\d+_\\d+")) dateTime
     else file.lastModifiedTime.toString("yyyyMMdd_HHmmss")
   }
