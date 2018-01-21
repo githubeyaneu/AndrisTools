@@ -9,6 +9,7 @@ object BittrexReader extends App {
   val j = """C:\DEVELOPING_1\projects\AndrisTools\src\main\resources\GetMarketSummaries""".linesFromFile.mkString("\r\n")
   val json = parse(j)
 
+  // https://github.com/thebotguys/golang-bittrex-api/wiki/Bittrex-API-Reference-(Unofficial)
   // https://json2caseclass.cleverapps.io/
   case class Market(
     MarketCurrency: String,
