@@ -9,7 +9,7 @@ import scala.concurrent.duration.DurationInt
 import scala.util.{ Success, Failure }
 
 object BittrexDb extends App {
-  val url = """D:\private\bittrex\mrl""".asFile.linesList.head
+  val url = """c:\private\bittrex\mrl""".asFile.linesList.head
   val db = Database.forURL(url, driver = "org.mariadb.jdbc.Driver")
 
   class Person(tag: Tag) extends Table[(Int, String)](tag, "PEOPLE") {
@@ -17,6 +17,7 @@ object BittrexDb extends App {
     def name = column[String]("NAME")
     def * = (id, name)
   }
+  
   val people = TableQuery[Person]
 
   println("create")
