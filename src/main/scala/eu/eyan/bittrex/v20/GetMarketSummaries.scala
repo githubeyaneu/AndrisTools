@@ -1,7 +1,10 @@
 package eu.eyan.bittrex.v20
 
+//val j = """src\main\resources\GetMarketSummaries""".linesFromFile.mkString("\r\n")
+//  val j = """https://bittrex.com/api/v1.1/public/getmarketsummaries""".asUrlGet
+
 object GetMarketSummaries extends AbstractBittrexApi {
-	def getApiUrl = """https://bittrex.com/api/v2.0/pub/markets/GetMarketSummaries"""
+  def getApiUrl = """https://bittrex.com/api/v2.0/pub/markets/GetMarketSummaries"""
   def get = getJson.extract[MarketSummaries]
 }
 

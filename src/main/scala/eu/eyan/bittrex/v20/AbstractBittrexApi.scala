@@ -11,8 +11,4 @@ trait AbstractBittrexApi {
   def getApiUrl: String
   val getApiContents = getApiUrl.asUrlGet
   def getJson = parse(getApiContents)
-
-  //val j = """src\main\resources\GetMarketSummaries""".linesFromFile.mkString("\r\n")
-  //  val j = """https://bittrex.com/api/v1.1/public/getmarketsummaries""".asUrlGet
-
 }

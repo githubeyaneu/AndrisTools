@@ -12,12 +12,11 @@ object BittrexReader extends App {
   // https://github.com/thebotguys/golang-bittrex-api/wiki/Bittrex-API-Reference-(Unofficial)
   // https://json2caseclass.cleverapps.io/
   
+	//GetMarkets https://bittrex.com/api/v2.0/pub/markets/GetMarkets
+  
   // https://bittrex.com/api/v2.0/pub/markets/GetMarketSummaries
-
-
-
+  println(GetMarketSummaries.get)
   
-  val markets = GetMarketSummaries.get
-  
-  println(markets)
+
+
 }
