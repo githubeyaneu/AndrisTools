@@ -8,21 +8,16 @@ import slick.lifted.TableQuery
 
 object GetMarketSummaries extends AbstractBittrexApi {
   def getApiUrl = """https://bittrex.com/api/v2.0/pub/markets/GetMarketSummaries"""
-  def get = getJson.extract[MarketSummaries]
-  def apply() = get
-  
-  private def tableQuery = TableQuery[MarketSummaryDb]
-  
-  def marketSummariesToDbInsert(input: MarketSummaries) = {
-    val query = tableQuery
-    input.result.foreach{  query += marketSummaryToDb(_) }
-    query
-  }
-  
+  def apply() = getJson.extract[MarketSummaries]
+
+  def tableQuery = TableQuery[MarketSummaryDb]
+
+  def marketSummariesToDbInsert(input: MarketSummaries) = input.result.map { marketSummaryToDb(_) }
+
   private def marketSummaryToDb(input: MarketSummary) = {
-      val market = input.Market
-      val summary = input.Summary
-      (market.MarketCurrency, market.BaseCurrency, market.MinTradeSize, market.IsActive, market.MarketName, summary.Last, summary.TimeStamp, summary.Bid, summary.Ask)
+    val market = input.Market
+    val summary = input.Summary
+    (market.MarketCurrency, market.BaseCurrency, market.MinTradeSize, market.IsActive, market.MarketName, summary.Last, summary.TimeStamp, summary.Bid, summary.Ask)
   }
 }
 
@@ -31,15 +26,14 @@ case class Summary(MarketName: String, High: Double, Low: Double, Volume: Double
 case class MarketSummary(Market: Market, Summary: Summary, IsVerified: Boolean)
 case class MarketSummaries(success: Boolean, message: String, result: List[MarketSummary])
 
-
 class MarketSummaryDb(tag: Tag) extends Table[(String, String, Double, Boolean, String, Double, String, Double, Double)](tag, "MARKETSUMMARY") {
-  def MarketCurrency = column[String]("MarketCurrency")
-  def BaseCurrency = column[String]("BaseCurrency")
+  def MarketCurrency = column[String]("MarketCurrency", O.Length(10))
+  def BaseCurrency = column[String]("BaseCurrency", O.Length(10))
   def MinTradeSize = column[Double]("MinTradeSize")
   def IsActive = column[Boolean]("IsActive")
-  def MarketName = column[String]("MarketName")
+  def MarketName = column[String]("MarketName", O.Length(10))
   def Last = column[Double]("Last")
-  def TimeStamp = column[String]("TimeStamp")
+  def TimeStamp = column[String]("TimeStamp", O.Length(20))
   def Bid = column[Double]("Bid")
   def Ask = column[Double]("Ask")
 

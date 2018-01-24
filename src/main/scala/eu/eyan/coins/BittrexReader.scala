@@ -13,44 +13,43 @@ import eu.eyan.util.io.FilePlus.FilePlusImplicit
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 import scala.util.{ Success, Failure }
-
+import eu.eyan.log.Log
 
 object BittrexReader extends App {
 
   // https://github.com/thebotguys/golang-bittrex-api/wiki/Bittrex-API-Reference-(Unofficial)
   // https://json2caseclass.cleverapps.io/
-  
-	//GetMarkets https://bittrex.com/api/v2.0/pub/markets/GetMarkets
-  
+
+  //GetMarkets https://bittrex.com/api/v2.0/pub/markets/GetMarkets
+
   // https://bittrex.com/api/v2.0/pub/markets/GetMarketSummaries
-  
+
+  Log.activateInfoLevel
   val summaries = GetMarketSummaries()
-  println(summaries)
-  
-  
+
   val url = """c:\private\bittrex\mrl""".asFile.linesList.head
   val db = Database.forURL(url, driver = "org.mariadb.jdbc.Driver")
 
-  val dbInsert = GetMarketSummaries.marketSummariesToDbInsert(summaries)
+  //  val dbInsert = GetMarketSummaries.marketSummariesToDbInsert(summaries)
 
-//  val setup = DBIO.seq( (dbInsert.schema).create )
-//  val setupFuture = db.run(setup)
+  val create = GetMarketSummaries.tableQuery
+  val setup = DBIO.seq((create.schema).create)
+  val setupFuture = db.run(setup)
+  Await.result(setupFuture, 10 seconds)
+  println("created")
 
-//    val setup = DBIO.seq( dbInsert.insertStatement )
-//  val setupFuture = db.run(setup)
+  val insertQuery = GetMarketSummaries.tableQuery
+  val insertAction = DBIO.seq(insertQuery ++= GetMarketSummaries.marketSummariesToDbInsert(summaries))
+  println("instering")
+  val insertFuture = db.run(insertAction)
+  println("run insert")
 
-//  setupFuture.onComplete {
-//    case Success(trace) => s"-- Finished successfully in $trace --".println
-//    case Failure(t)     => s"-- ERROR: ${t.getMessage}".println; t.printStackTrace
-//  }
-//  Await.result(setupFuture, 10 seconds)
-
-//  println("People:")
-//  db.run(people.result).map(_.foreach { case (supID, name) => println("  " + name + "\t" + supID) })
-//  db.run(people.result).map(_.foreach { case (supID, name) => println("  " + name + "\t" + supID) })
-//  Await.result(db.run(DBIO.seq((people.schema).drop)), 10 seconds)
+  insertFuture.onComplete {
+    case Success(_) => s"-- Insert successful --".println
+    case Failure(t) => s"-- ERROR: ${t.getMessage}".println; t.printStackTrace
+  }
+  Await.result(insertFuture, 10 seconds)
+  println("inserted")
 
   db.close
-
-
 }
