@@ -17,4 +17,6 @@ trait AbstractBittrexApi {
     Log.info("parse Json text length=" + contents.length)
     parse(contents)
   }
+  
+  def stringToJson(input: String) = parse(input)
 }

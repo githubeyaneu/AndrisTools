@@ -8,6 +8,7 @@ import slick.lifted.TableQuery
 
 object GetMarketSummaries extends AbstractBittrexApi {
   def getApiUrl = """https://bittrex.com/api/v2.0/pub/markets/GetMarketSummaries"""
+  def apply(input: String) = stringToJson(input).extract[MarketSummaries]
   def apply() = getJson.extract[MarketSummaries]
 
   def tableQuery = TableQuery[MarketSummaryDb]
@@ -33,7 +34,7 @@ class MarketSummaryDb(tag: Tag) extends Table[(String, String, Double, Boolean, 
   def IsActive = column[Boolean]("IsActive")
   def MarketName = column[String]("MarketName", O.Length(10))
   def Last = column[Double]("Last")
-  def TimeStamp = column[String]("TimeStamp", O.Length(20))
+  def TimeStamp = column[String]("TimeStamp", O.Length(30))
   def Bid = column[Double]("Bid")
   def Ask = column[Double]("Ask")
 
