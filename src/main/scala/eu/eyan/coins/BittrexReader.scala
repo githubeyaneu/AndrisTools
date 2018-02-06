@@ -18,6 +18,7 @@ import scala.util.{ Success, Failure }
 import eu.eyan.log.Log
 import eu.eyan.bittrex.v20.MarketSummaries
 import scala.concurrent.Await
+import java.sql.DriverManager
 
 class BittrexReader {
 
@@ -31,20 +32,47 @@ class BittrexReader {
   Log.activateInfoLevel
 
   val url = """c:\private\bittrex\mrl""".asFile.linesList.head
-  //  val db = Database.forURL(url, driver = "org.mariadb.jdbc.Driver")
   val db = Database.forURL(url, driver = "com.mysql.cj.jdbc.Driver")
+  //  val db = Database.forURL(url, driver = "org.mariadb.jdbc.Driver")
 
-  //  val create = GetMarketSummaries.tableQuery
-  //  val setup = DBIO.seq((create.schema).create)
-  //  val setupFuture = db.run(setup)
-  //  Await.result(setupFuture, 10 seconds)
+  // CREATE SCHEMA
+  //  val setup = DBIO.seq((GetMarketSummaries.tableQuery.schema).create)
+  //    Await.result(db.run(setup), 10 seconds)
 
-    def toDB(summaries: MarketSummaries) = db.run(DBIO.seq(GetMarketSummaries.tableQuery ++= GetMarketSummaries.marketSummariesToDbInsert(summaries)))
-//  def toDB(summaries: MarketSummaries) = {
-//    val chunkFutures = for (chunk <- GetMarketSummaries.marketSummariesToDbInsert(summaries).sliding(100, 100))
-//      yield db.run(DBIO.seq(GetMarketSummaries.tableQuery ++= chunk))
-//    Future.sequence(chunkFutures)
-//  }
+  // to DB SLICK
+    def toDBS(summaries: MarketSummaries) = db.run(DBIO.seq(GetMarketSummaries.tableQuery ++= GetMarketSummaries.marketSummariesToDbInsertSlick(summaries)))
+  //  def toDB(summaries: MarketSummaries) = {
+  //    val chunkFutures = for (chunk <- GetMarketSummaries.marketSummariesToDbInsert(summaries).sliding(100, 100))
+  //      yield db.run(DBIO.seq(GetMarketSummaries.tableQuery ++= chunk))
+  //    Future.sequence(chunkFutures)
+  //  }
 
-  def close = db.close
+  //to db batch insert
+  Class.forName("com.mysql.cj.jdbc.Driver")
+  val con = DriverManager.getConnection(url)
+  con.setAutoCommit(false)
+  
+  def toDB(summaries: MarketSummaries) = Future{
+    try {
+      val st = con.createStatement
+//      GetMarketSummaries.marketSummariesToDbInsert(summaries).foreach(st.addBatch)
+
+    st.executeUpdate("INSERT INTO MARKETSUMMARY VALUES "+GetMarketSummaries.marketSummariesToDbInsertValues(summaries).mkString(","))
+
+//      val sql = "select * from person"
+//      val rs = st.executeQuery(sql)
+      //  System.out.println("No  \tName")
+      //  while (rs.next()) {
+      //  System.out.print(rs.getString(1) + " \t")
+      //  System.out.println(rs.getString(2))
+      //  }
+//      rs.close
+      
+      st.close
+    } catch {
+      case e: Exception => e.printStackTrace()
+    }
+  }
+
+   def close = { /*db.close*/ con.close}
 }

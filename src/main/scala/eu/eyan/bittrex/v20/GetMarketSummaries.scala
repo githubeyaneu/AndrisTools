@@ -8,6 +8,7 @@ import java.time.format.DateTimeFormatter
 import java.time.ZoneId
 import java.util.Date
 import eu.eyan.util.scala.TryCatch
+import java.sql.Timestamp
 
 //val j = """src\main\resources\GetMarketSummaries""".linesFromFile.mkString("\r\n")
 //  val j = """https://bittrex.com/api/v1.1/public/getmarketsummaries""".asUrlGet
@@ -19,13 +20,19 @@ object GetMarketSummaries extends AbstractBittrexApi {
 
   def tableQuery = TableQuery[MarketSummaryDb]
 
-  def marketSummariesToDbInsert(input: MarketSummaries) = input.result.map { marketSummaryToDb(_) }
+  def marketSummariesToDbInsertSlick(input: MarketSummaries) = input.result.map { marketSummaryToDb }
+  
+  def marketSummariesToDbInsertValues(input: MarketSummaries) = input.result.map(marketSummaryToDb).map(toInsert)
 
   val inputFormat1 = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.S")
   val inputFormat2 = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SS")
   val inputFormat3 = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS")
   val inputFormat4 = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")
 
+  private def toInsert(input: Tuple9[String, String, Double, Boolean, String, Double, Timestamp, Double, Double]) = {
+    s"('${input._1}', '${input._2}', ${input._3}, ${input._4}, '${input._5}', ${input._6}, '${input._7}', ${input._8}, ${input._9})"
+  }
+  
   private def marketSummaryToDb(input: MarketSummary) = {
     val market = input.Market
     val summary = input.Summary
