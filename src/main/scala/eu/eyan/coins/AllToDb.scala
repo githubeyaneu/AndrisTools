@@ -20,7 +20,7 @@ import eu.eyan.util.time.TimeCounter
 import eu.eyan.util.scala.TryCatchThrowable
 
 object AllToDb extends App {
-  val tarsPath = """C:\DEVELOPING_1\projects\coindatachris\json"""
+  val tarsPath = """i:\coindatachris\json"""
   //  val tarPath = """C:\DEVELOPING_1\projects\coindatachris\json\2017_12_18.tar"""
   //  val jsonsPath = """C:\DEVELOPING_1\projects\coindatachris\2017_12_18"""
   //  val jsonPath = """C:\DEVELOPING_1\projects\coindatachris\2017_12_18\summaries_minute_2017_12_18-01_30_55.json"""

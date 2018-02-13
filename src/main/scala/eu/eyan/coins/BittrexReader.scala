@@ -34,10 +34,10 @@ class BittrexReader {
   //  val db = Database.forURL(url, driver = "org.mariadb.jdbc.Driver")
   val db = Database.forURL(url, driver = "com.mysql.cj.jdbc.Driver")
 
-  //  val create = GetMarketSummaries.tableQuery
-  //  val setup = DBIO.seq((create.schema).create)
-  //  val setupFuture = db.run(setup)
-  //  Await.result(setupFuture, 10 seconds)
+//    val create = GetMarketSummaries.tableQuery
+//    val setup = DBIO.seq((create.schema).create)
+//    val setupFuture = db.run(setup)
+//    Await.result(setupFuture, 10 seconds)
 
     def toDB(summaries: MarketSummaries) = db.run(DBIO.seq(GetMarketSummaries.tableQuery ++= GetMarketSummaries.marketSummariesToDbInsert(summaries)))
 //  def toDB(summaries: MarketSummaries) = {
