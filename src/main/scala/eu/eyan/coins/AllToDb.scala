@@ -27,8 +27,9 @@ object AllToDb extends App {
   //  val jsonGzPath = """C:\DEVELOPING_1\projects\coindatachris\2017_12_18\summaries_minute_2017_12_18-01_30_55.json.gz"""
 
   val bittrexReader = new BittrexReader()
+  TimeCounter.countAndPrint(s"All To DB") { tarsPath.asDir.subFiles.foreach(importTarsToDb) }
+  bittrexReader.close
 
-  tarsPath.asDir.subFiles.foreach(importTarsToDb)
   def importTarsToDb(tar: File) = {
     Log.info(s"Processing $tar")
     TimeCounter.countAndPrint("processing tar:" + tar) {
@@ -46,9 +47,7 @@ object AllToDb extends App {
 
   def importJsonGzArrayToDb(name: String, gz: Array[Byte]) = TryCatchThrowable(
     bittrexReader.toDB(GetMarketSummaries(ZipPlus.gzArrayToString(gz))),
-    t=> Future(Log.error("parsing: " + name)))
-
-  bittrexReader.close
+    t => Future(Log.error("parsing: " + name)))
 
   //
   //
