@@ -18,19 +18,22 @@ import eu.eyan.log.Log
 import eu.eyan.util.scala.TryCatch
 import eu.eyan.util.time.TimeCounter
 import eu.eyan.util.scala.TryCatchThrowable
+import eu.eyan.util.compress.ZipPlus.NameAndContent
 
 object AllToDb extends App {
+  Log.activate
+
   val tarsPath = """C:\DEVELOPING_1\projects\coindatachris\json"""
   //  val tarPath = """C:\DEVELOPING_1\projects\coindatachris\json\2017_12_18.tar"""
   //  val jsonsPath = """C:\DEVELOPING_1\projects\coindatachris\2017_12_18"""
   //  val jsonPath = """C:\DEVELOPING_1\projects\coindatachris\2017_12_18\summaries_minute_2017_12_18-01_30_55.json"""
   //  val jsonGzPath = """C:\DEVELOPING_1\projects\coindatachris\2017_12_18\summaries_minute_2017_12_18-01_30_55.json.gz"""
 
-  val bittrexReader = new BittrexReader()
-  TimeCounter.countAndPrint(s"All To DB") { tarsPath.asDir.subFiles.foreach(importTarsToDb) }
+  private val bittrexReader = new BittrexReader()
+  TimeCounter.countAndPrint(s"All To DB") { tarsPath.asDir.subFiles.foreach(importTarToDb) }
   bittrexReader.close
 
-  def importTarsToDb(tar: File) = {
+  def importTarToDb(tar: File) = {
     Log.info(s"Processing $tar")
     TimeCounter.countAndPrint("processing tar:" + tar) {
       val gzips = ZipPlus.unTarAllFilesToMemory(tar)
@@ -38,21 +41,26 @@ object AllToDb extends App {
       gzipChunks.foreach {
         case (gzips, index) =>
           TimeCounter.countAndPrint(s"chunk $index done") {
-            val inserts = gzips.map(t => importJsonGzArrayToDb(t._1, t._2))
-            Await.result(Future.sequence(inserts), 1 hours)
+            Await.result(Future.sequence(gzips map importJsonGzArrayToDb), 1 hours)
           }
       }
     }
   }
 
-  def importJsonGzArrayToDb(name: String, gz: Array[Byte]) = TryCatchThrowable(
-    bittrexReader.toDB(GetMarketSummaries(ZipPlus.gzArrayToString(gz))),
-    t => Future(Log.error("parsing: " + name)))
-
-  //
-  //
-
-  //  def importJsonGzToDb(file: File) = countAndPrint(file.toString) { BittrexReader.toDB(GetMarketSummaries(ZipPlus.gzToString(file))) }
-  //  jsonsPath.asFile.subFiles.filter(_.getName.endsWith("gz")).foreach(importJsonGzToDb)
+  def importJsonGzArrayToDb(file: NameAndContent) = {
+    val contentOption = ZipPlus.unzipToString(file.content)
+//    val conentFuture = Future.fromTry(contentOption)
+    
+    val marketOption = contentOption.map(GetMarketSummaries.apply)
+    
+    
+    val r = contentOption.map(content => TryCatchThrowable(
+      bittrexReader.toDB(GetMarketSummaries(content)),
+      t => Future(Log.error("parsing: " + file.filename))))
+    
+		val content = contentOption.get
+    TryCatchThrowable(
+      bittrexReader.toDB(GetMarketSummaries(content)),
+      t => Future(Log.error("parsing: " + file.filename)))
+  }
 }
-
