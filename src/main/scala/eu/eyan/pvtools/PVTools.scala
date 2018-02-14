@@ -67,7 +67,7 @@ object PVTools extends App {
   val tempPathTextField = panel.nextColumn.addTextField("").rememberValueInRegistry("tempPath")
 
   panel.newRow.addLabel("Files to import: ")
-  val extensionsToImportTextField = panel.nextColumn.addTextField("JPG,MTS").rememberValueInRegistry("extensionsToImport")
+  val extensionsToImportTextField = panel.nextColumn.addTextField("JPG,MTS,m2ts").rememberValueInRegistry("extensionsToImport")
 
   panel.newRow.addLabel("Files to convert: ")
   val extensionsToConvertTextField = panel.nextColumn.addTextField("MTS,m2ts").rememberValueInRegistry("extensionsToConvert")
