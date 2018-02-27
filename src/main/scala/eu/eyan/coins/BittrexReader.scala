@@ -19,6 +19,7 @@ import eu.eyan.log.Log
 import eu.eyan.bittrex.v20.MarketSummaries
 import scala.concurrent.Await
 import java.sql.DriverManager
+import eu.eyan.util.scala.TryCatchThrowable
 
 class BittrexReader {
 
@@ -40,7 +41,7 @@ class BittrexReader {
   //    Await.result(db.run(setup), 10 seconds)
 
   // to DB SLICK
-    def toDBS(summaries: MarketSummaries) = db.run(DBIO.seq(GetMarketSummaries.tableQuery ++= GetMarketSummaries.marketSummariesToDbInsertSlick(summaries)))
+  def toDBS(summaries: MarketSummaries) = db.run(DBIO.seq(GetMarketSummaries.tableQuery ++= GetMarketSummaries.marketSummariesToDbInsertSlick(summaries)))
   //  def toDB(summaries: MarketSummaries) = {
   //    val chunkFutures = for (chunk <- GetMarketSummaries.marketSummariesToDbInsert(summaries).sliding(100, 100))
   //      yield db.run(DBIO.seq(GetMarketSummaries.tableQuery ++= chunk))
@@ -51,28 +52,25 @@ class BittrexReader {
   Class.forName("com.mysql.cj.jdbc.Driver")
   val con = DriverManager.getConnection(url)
   con.setAutoCommit(false)
-  
-  def toDB(summaries: MarketSummaries) = Future{
-    try {
+
+  def toDB(summaries: MarketSummaries) = Future(
+    TryCatchThrowable({
       val st = con.createStatement
-//      GetMarketSummaries.marketSummariesToDbInsert(summaries).foreach(st.addBatch)
+      //      GetMarketSummaries.marketSummariesToDbInsert(summaries).foreach(st.addBatch)
 
-    st.executeUpdate("INSERT INTO MARKETSUMMARY VALUES "+GetMarketSummaries.marketSummariesToDbInsertValues(summaries).mkString(","))
+      st.executeUpdate("INSERT INTO MARKETSUMMARY VALUES " + GetMarketSummaries.marketSummariesToDbInsertValues(summaries).mkString(","))
 
-//      val sql = "select * from person"
-//      val rs = st.executeQuery(sql)
+      //      val sql = "select * from person"
+      //      val rs = st.executeQuery(sql)
       //  System.out.println("No  \tName")
       //  while (rs.next()) {
       //  System.out.print(rs.getString(1) + " \t")
       //  System.out.println(rs.getString(2))
       //  }
-//      rs.close
-      
-      st.close
-    } catch {
-      case e: Exception => e.printStackTrace()
-    }
-  }
+      //      rs.close
 
-   def close = { /*db.close*/ con.close}
+      st.close
+    }, t => Log.error(t)))
+
+  def close = { /*db.close*/ con.close }
 }

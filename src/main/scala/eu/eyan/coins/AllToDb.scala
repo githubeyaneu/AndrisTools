@@ -19,11 +19,20 @@ import eu.eyan.util.scala.TryCatch
 import eu.eyan.util.time.TimeCounter
 import eu.eyan.util.scala.TryCatchThrowable
 import eu.eyan.util.compress.ZipPlus.NameAndContent
+import com.typesafe.config.ConfigFactory
+import eu.eyan.util.config.Config
+import eu.eyan.util.scala.TryPlus.TryPlusImplicit
+import eu.eyan.bittrex.v20.MarketSummaries
+import scala.util.Try
 
 object AllToDb extends App {
   Log.activate
 
-  val tarsPath = """C:\DEVELOPING_1\projects\coindatachris\json"""
+  val config = Config("""C:\DEVELOPING_1\projects\coindatachris\conf.properties""")
+  val tarsPath = config.get("tarsPath").getOrElse("")
+  Log.info("Tars path: " + tarsPath)
+
+  //  val tarsPath = """C:\DEVELOPING_1\projects\coindatachris\json"""
   //  val tarPath = """C:\DEVELOPING_1\projects\coindatachris\json\2017_12_18.tar"""
   //  val jsonsPath = """C:\DEVELOPING_1\projects\coindatachris\2017_12_18"""
   //  val jsonPath = """C:\DEVELOPING_1\projects\coindatachris\2017_12_18\summaries_minute_2017_12_18-01_30_55.json"""
@@ -47,20 +56,25 @@ object AllToDb extends App {
     }
   }
 
-  def importJsonGzArrayToDb(file: NameAndContent) = {
-    val contentOption = ZipPlus.unzipToString(file.content)
-//    val conentFuture = Future.fromTry(contentOption)
+  def importJsonGzArrayToDb(fileNameAndContent: NameAndContent) = {
+    val contentOption = ZipPlus.unzipToString(fileNameAndContent.content)
+    //    val conentFuture = Future.fromTry(contentOption)
+
+    val marketOption = contentOption.mapWithErrorHandler(GetMarketSummaries.apply, t => Log.error("error creating MarketSummaries: " + fileNameAndContent.filename))
     
-    val marketOption = contentOption.map(GetMarketSummaries.apply)
+    val marketFuture = Future.fromTry(marketOption)
     
-    
+    //val insertIntoDbFuture = marketFuture map bittrexReader.toDB
+
     val r = contentOption.map(content => TryCatchThrowable(
       bittrexReader.toDB(GetMarketSummaries(content)),
-      t => Future(Log.error("parsing: " + file.filename))))
-    
-		val content = contentOption.get
-    TryCatchThrowable(
+      t => Future(Log.error("parsing: " + fileNameAndContent.filename))))
+
+    val content = contentOption.get
+    val ret = TryCatchThrowable(
       bittrexReader.toDB(GetMarketSummaries(content)),
-      t => Future(Log.error("parsing: " + file.filename)))
+      t => Future(Log.error("parsing: " + fileNameAndContent.filename)))
+
+    ret
   }
 }
