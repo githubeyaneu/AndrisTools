@@ -26,7 +26,7 @@ import eu.eyan.bittrex.v20.MarketSummaries
 import scala.util.Try
 
 object AllToDb extends App {
-  Log.activate
+  Log.activateDebugLevel
 
   val config = Config("""C:\DEVELOPING_1\projects\coindatachris\conf.properties""")
   val tarsPath = config.get("tarsPath").getOrElse("")

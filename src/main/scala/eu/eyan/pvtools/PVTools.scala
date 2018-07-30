@@ -48,7 +48,8 @@ import javax.swing.JTextField
  * TODO: fájlonként mentse az exportot
  */
 object PVTools extends App {
-  Log.activateInfoLevel.redirectSystemOutAndErrToLogWindow
+  Log.activateInfoLevel
+  LogWindow.redirectSystemOutAndErrToLogWindow
 
   /***************************  UI  ***************************************************/
 
