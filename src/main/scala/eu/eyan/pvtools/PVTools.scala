@@ -97,7 +97,7 @@ object PVTools extends App {
   val frame = new JFrame().title(TITLE).onCloseHide.iconFromChar('I', Color.ORANGE).addToSystemTray().withComponent(panel)
     .menuItem("File", "Exit", System.exit(0))
     .menuItem("Debug", "Open log window", LogWindow.show(panel))
-    .menuItem("Debug", "Copy logs to clipboard", ClipboardPlus.copyToClipboard(Log.getAllLogs))
+    .menuItem("Debug", "Copy logs to clipboard", ClipboardPlus.copyToClipboard(LogWindow.getAllLogs))
     .menuItem("Debug", "Clear registry values", RegistryPlus.clear(TITLE))
     .menuItem("Help", "Write email", writeEmail)
     .menuItem("Help", "About", alert("This is not an official tool, no responsibilities are taken. Use it at your own risk."))
@@ -187,7 +187,7 @@ object PVTools extends App {
   }
 
   def writeEmail =
-    Desktop.getDesktop.mail(new URI("mailto:PVTools@eyan.eu?subject=Photo%20and%20video%20import&body=" + URLEncoder.encode(Log.getAllLogs, "utf-8").replace("+", "%20")))
+    Desktop.getDesktop.mail(new URI("mailto:PVTools@eyan.eu?subject=Photo%20and%20video%20import&body=" + URLEncoder.encode(LogWindow.getAllLogs, "utf-8").replace("+", "%20")))
 
   def convertVideo(in: File, out: File, progress: Int => Unit) = {
     val targetVideo = out.withoutExtension + ".mp4"
