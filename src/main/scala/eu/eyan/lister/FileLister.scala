@@ -34,6 +34,8 @@ import eu.eyan.util.compress.CompressPlus
 import eu.eyan.util.compress.ZipPlus
 import eu.eyan.util.compress.SevenZipPlus
 import eu.eyan.util.scala.TryCatchFinallyClose
+import eu.eyan.util.system.SystemPlus.KeepAlive
+import eu.eyan.util.system.SystemPlus
 
 /**
  * To list all the files on all drives. Also search inside the compressed files.
@@ -41,6 +43,11 @@ import eu.eyan.util.scala.TryCatchFinallyClose
 object FileLister extends App {
   
   Log.activateDebugLevel
+// TODO reimplement  LogWindow.redirectOutAndErrToFiles("""C:\temp""")
+  LogWindow.redirectSystemOutAndErrToLogWindow
+  "1".println
+  "2".printlnErr
+
   val TITLE = "File Lister"
 
   val panel = new JPanelWithFrameLayout().withBorders.withSeparators
@@ -66,21 +73,21 @@ object FileLister extends App {
   val frame = new JFrame().title(TITLE).onCloseHide.iconFromChar('L', Color.CYAN).addToSystemTray().withComponent(panel)
     .menuItem("File", "Exit", System.exit(0))
     .menuItem("Debug", "Open log window", LogWindow.show(panel))
-    .menuItem("Debug", "Copy logs to clipboard", ClipboardPlus.copyToClipboard(Log.getAllLogs))
+    .menuItem("Debug", "Copy logs to clipboard", ClipboardPlus.copyToClipboard(LogWindow.getAllLogs))
     .menuItem("Debug", "Clear registry values", RegistryPlus.clear(TITLE))
     .menuItem("Help", "Write email", writeEmail)
     .menuItem("Help", "About", alert("This is not an official tool, no responsibilities are taken. Use it at your own risk."))
     .packAndSetVisible
 
-  def writeEmail = Desktop.getDesktop.mail(new URI("mailto:PVTools@eyan.eu?subject=FileLister&body=" + URLEncoder.encode(Log.getAllLogs, "utf-8").replace("+", "%20")))
+  def writeEmail = Desktop.getDesktop.mail(new URI("mailto:PVTools@eyan.eu?subject=FileLister&body=" + URLEncoder.encode(LogWindow.getAllLogs, "utf-8").replace("+", "%20")))
   def alert(msg: String) = JOptionPane.showMessageDialog(null, msg)
 
   var ct = 0
-  def listFilesOfAllDrives = {
+  def listFilesOfAllDrives = SystemPlus.keepAlive{
     ct = 0
     val fsv = FileSystemView.getFileSystemView
     //    val roots = List("""C:\DEV\projects\AndrisTools\src\test\resources\list""".asFile).map(_.fileTreeWithItself)
-    val roots = File.listRoots.filter(_.getAbsolutePath.containsAnyIgnoreCase(ignoreTextField.getText.split(","))).map(_.fileTreeWithItself)
+    val roots = File.listRoots/*.filter(_.getAbsolutePath.containsAnyIgnoreCase(ignoreTextField.getText.split(",")))*/.map(_.fileTreeWithItself)
     val target = targetTextField.getText.asFile
     if (target.exists) target.renameTo(target.extendFileNameWith("_old").generateNewNameIfExists())
 
@@ -88,6 +95,7 @@ object FileLister extends App {
       new BufferedWriter(new FileWriter(target)),
       (bw: BufferedWriter) => roots.foreach(_.foreach(file => bw.write(logFile(file) + "\r\n"))),
       t => Log.error(s"Error opening $target to write",t))
+      
   }
 
   val DT = "yyyyMMdd HHmmss"
