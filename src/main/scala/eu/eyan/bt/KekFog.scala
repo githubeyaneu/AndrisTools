@@ -23,14 +23,24 @@ import javax.swing.JScrollPane
 import eu.eyan.util.rx.lang.scala.subjects.BehaviorSubjectPlus.BehaviorSubjectImplicit
 import javax.bluetooth.UUID
 import eu.eyan.util.swing.JTablePlus3
+import rx.lang.scala.subjects.BehaviorSubject
+import rx.lang.scala.subjects.PublishSubject
+import rx.lang.scala.Observable
+import eu.eyan.util.rx.lang.scala.ObservablePlus.ObservableImplicitBoolean
+import eu.eyan.util.rx.lang.scala.ObservablePlus.ObservableImplicit
+import eu.eyan.util.text.Text
+import java.awt.Color
+import org.apache.log4j.BasicConfigurator
 
 //  http://www.aviyehuda.com/blog/2010/01/08/connecting-to-bluetooth-devices-with-java/
 //  http://snapshot.bluecove.org/distribution/download/2.1.1-SNAPSHOT/2.1.1-SNAPSHOT.63/
 object KekFog extends App {
-  Log.activateInfoLevel
+  BasicConfigurator.configure(Log.log4jAppender)
+//  BasicConfigurator.configure
+  Log.activateDebugLevel
 
   private val registry = RegistryGroup("Kekfog")
-  
+
   private val btDevicesTable =
     new JTablePlus3[String, BluetoothDevice](
       ("Name", _.btRemoteDevice.getBluetoothAddress),
@@ -49,27 +59,21 @@ object KekFog extends App {
       ("HostDevice", _.getHostDevice.getBluetoothAddress))
       .rememberColumnWidhts(registry.registryValue("table"))
 
-  private def discoveredCallBack(bt: BluetoothDevice) = btDevicesTable += bt
-
-  private def searchForService(bt: BluetoothDevice): Unit = discoveryAndListener.searchServices(bt)
-
-  private def startServiceSearch: Unit = { btServicesTable.clear ; serviceSearchButton.disabled; serviceSearchButton.setText("Inquiry"); btDevicesTable.selection.foreach(searchForService _) }
-  private def servicesDiscovered(services: Array[ServiceRecord]) = services.foreach(btServicesTable += _)
-  private def serviceSearchCompletedCallback(result: InquiryResult) = { serviceSearchButton.enabled; serviceSearchButton.setText("Discover " + result) }
-
-  private val discoveryAndListener = new MyDiscovery(discoveredCallBack, inquiryEnded, servicesDiscovered, serviceSearchCompletedCallback)
-  private def inquiryStart: Unit = { btDevicesTable.clear; inquiryButton.disabled; inquiryButton.setText("Inquiry"); discoveryAndListener.startInquiry }
-  private def inquiryEnded(result: InquiryResult): Unit = { inquiryButton.enabled; inquiryButton.setText("Discover " + result) }
+  private val bluetoothDiscovery = new BluetoothDiscovery
 
   private val panel = new JPanelWithFrameLayout().withBorders.withSeparators
-  private val inquiryButton = panel.newColumn("f:1000px").newRow.addButton("Discover").onActionPerformed(inquiryStart)
-
+  private val inquiryButton = panel.newColumn("f:1000px").newRow.addButton("-").onActionPerformed(inquiryStart)
   panel.newRow.addFluentInScrollPane(btDevicesTable)
-  private val serviceSearchButton = panel.newRow.addButton("Search Service").onAction(startServiceSearch)
+  private val serviceSearchButton = panel.newRow.addButton("-").onAction(startServiceSearch)
   panel.newRow.addFluentInScrollPane(btServicesTable)
 
+  inquiryButton.enabled(bluetoothDiscovery.discoveryActive.negate)
+  inquiryButton.text(bluetoothDiscovery.discoveryState.map("Discover (" + _ + ")"))
+  serviceSearchButton.enabled(bluetoothDiscovery.discoveryActive.negate.and(btDevicesTable.isRowSelected))
+  serviceSearchButton.text(bluetoothDiscovery.discoveryState.map("Search Service (" + _ + ")"))
+
   new JFrame()
-    .iconFromChar('B')
+    .iconFromChar('B', Color.blue.brighter.brighter.brighter)
     .title("Kékfog")
     .onCloseHide
     .withComponent(panel)
@@ -78,68 +82,136 @@ object KekFog extends App {
     .menuItem("Debug", "Clear registry values", RegistryPlus.clear("Kekfog"))
     .packAndSetVisible
     .maximize
+
+  bluetoothDiscovery.servicesDiscovered.subscribe(_.services.foreach(btServicesTable += _))
+  bluetoothDiscovery.deviceDiscovered.subscribe(btDevicesTable += _)
+
+  private def searchForService(bt: BluetoothDevice): Unit = bluetoothDiscovery.searchServices(bt)
+  private def startServiceSearch: Unit = { btServicesTable.clear; btDevicesTable.selection.foreach(searchForService _) }
+
+  private def inquiryStart: Unit = { btDevicesTable.clear; bluetoothDiscovery.startInquiry }
+
 }
 
 case class BluetoothDevice(btRemoteDevice: RemoteDevice, classOfDevice: DeviceClass)
+case class BluetoothServices(transactionId: Int, services: Array[ServiceRecord])
 
-trait InquiryResult
-case object INQUIRY_COMPLETED extends InquiryResult
-case object INQUIRY_TERMINATED extends InquiryResult
-case object INQUIRY_ERROR extends InquiryResult
-case object INQUIRY_UNKNOWN extends InquiryResult
-case object SERVICE_SEARCH_COMPLETED extends InquiryResult
-case object SERVICE_SEARCH_TERMINATED extends InquiryResult
-case object SERVICE_SEARCH_ERROR extends InquiryResult
-case object SERVICE_SEARCH_NO_RECORDS extends InquiryResult
-case object SERVICE_SEARCH_DEVICE_NOT_REACHABLE extends InquiryResult
-case object SERVICE_SEARCH_UNKNOWN extends InquiryResult
+trait DiscoveryState
+case object DISCOVERY_NOT_STARTED extends DiscoveryState
 
-class MyDiscovery(
-  discoveredCallBack:             BluetoothDevice => Unit,
-  inquiryCompletedCallback:       InquiryResult => Unit,
-  servicesDiscoveredCallback:     Array[ServiceRecord] => Unit,
-  serviceSearchCompletedCallback: InquiryResult => Unit) {
-  def startInquiry = agent.startInquiry(DiscoveryAgent.GIAC, discoveryListener)
-  def searchServices(bt: BluetoothDevice) = Log.info(agent.searchServices(null, Array(new UUID(0x1105)), bt.btRemoteDevice, discoveryListener))
+case object INQUIRY_STARTED extends DiscoveryState
+case object INQUIRY_COMPLETED extends DiscoveryState
+case object INQUIRY_TERMINATED extends DiscoveryState
+case object INQUIRY_ERROR extends DiscoveryState
+case object INQUIRY_UNKNOWN extends DiscoveryState
 
-  private val localDevice = LocalDevice.getLocalDevice
-  private val agent = localDevice.getDiscoveryAgent()
+case object SERVICE_SEARCH_STARTED extends DiscoveryState
+case object SERVICE_SEARCH_COMPLETED extends DiscoveryState
+case object SERVICE_SEARCH_TERMINATED extends DiscoveryState
+case object SERVICE_SEARCH_ERROR extends DiscoveryState
+case object SERVICE_SEARCH_NO_RECORDS extends DiscoveryState
+case object SERVICE_SEARCH_DEVICE_NOT_REACHABLE extends DiscoveryState
+case object SERVICE_SEARCH_UNKNOWN extends DiscoveryState
+
+case object UUID_A extends UUID(0x1105)
+
+case object UUID_Base_UUID_Value extends UUID("0000000000001000800000805F9B34FB", false) // 128-bit  (Used in promoting 16-bit and 32-bit UUIDs to 128-bit UUIDs)
+case object UUID_SDP extends UUID(0x0001)
+case object UUID_RFCOMM extends UUID(0x0003)
+case object UUID_OBEX extends UUID(0x0008)
+case object UUID_HTTP extends UUID(0x000C)
+case object UUID_L2CAP extends UUID(0x0100)
+case object UUID_BNEP extends UUID(0x000F)
+case object UUID_Serial_Port extends UUID(0x1101)
+case object UUID_ServiceDiscoveryServerServiceClassID extends UUID(0x1000)
+case object UUID_BrowseGroupDescriptorServiceClassID extends UUID(0x1001)
+case object UUID_PublicBrowseGroup extends UUID(0x1002)
+case object UUID_OBEX_Object_Push_Profile extends UUID(0x1105)
+case object UUID_OBEX_File_Transfer_Profile extends UUID(0x1106)
+case object UUID_Personal_Area_Networking_User extends UUID(0x1115)
+case object UUID_Network_Access_Point extends UUID(0x1116)
+case object UUID_Group_Network extends UUID(0x1117)
+
+class BluetoothDiscovery() {
+  private val ALL_UUIDS = Array[UUID](
+    UUID_Base_UUID_Value,
+    UUID_SDP,
+    UUID_RFCOMM,
+    UUID_OBEX,
+    UUID_HTTP,
+    UUID_L2CAP,
+    UUID_BNEP,
+    UUID_Serial_Port,
+    UUID_ServiceDiscoveryServerServiceClassID,
+    UUID_BrowseGroupDescriptorServiceClassID,
+    UUID_PublicBrowseGroup,
+    UUID_OBEX_Object_Push_Profile,
+    UUID_OBEX_File_Transfer_Profile,
+    UUID_Personal_Area_Networking_User,
+    UUID_Network_Access_Point,
+    UUID_Group_Network
+    )
+
+  def discoveryState = discoveryState_.distinctUntilChanged
+  def startInquiry: Boolean = {
+    if (discoveryActive.get) false
+    else {
+      discoveryState_ onNext INQUIRY_STARTED
+      agent.startInquiry(DiscoveryAgent.GIAC, discoveryListener)
+    }
+  }
+  def deviceDiscovered = deviceDiscovered_.asInstanceOf[Observable[BluetoothDevice]]
+
+  def searchServices(bt: BluetoothDevice): Int = {
+    if (discoveryActive.get) -2
+    else {
+      discoveryState_ onNext SERVICE_SEARCH_STARTED
+      ALL_UUIDS.foreach(uuid => agent.searchServices(null, Array(uuid), bt.btRemoteDevice, discoveryListener))
+      0
+//      agent.searchServices(null, ALL_UUIDS, bt.btRemoteDevice, discoveryListener)
+    }
+  }
+  def servicesDiscovered = servicesDiscovered_.asInstanceOf[Observable[BluetoothServices]]
+
+  private val discoveryListener = new MyDiscoveryListener
+  private val discoveryState_ = BehaviorSubject[DiscoveryState](DISCOVERY_NOT_STARTED)
+  private val deviceDiscovered_ = PublishSubject[BluetoothDevice]
+  private val servicesDiscovered_ = PublishSubject[BluetoothServices]
+
+  private lazy val agent = localDevice.getDiscoveryAgent
+  private lazy val localDevice = LocalDevice.getLocalDevice
+
+  val discoveryActive = discoveryState.map(state => state == INQUIRY_STARTED || state == SERVICE_SEARCH_STARTED)
 
   private val discoveryListenerCodes = Map(
     0x00 -> INQUIRY_COMPLETED,
-    0x05 -> INQUIRY_TERMINATED,
-    0x07 -> INQUIRY_ERROR,
     0x01 -> SERVICE_SEARCH_COMPLETED,
     0x02 -> SERVICE_SEARCH_TERMINATED,
     0x03 -> SERVICE_SEARCH_ERROR,
     0x04 -> SERVICE_SEARCH_NO_RECORDS,
-    0x06 -> SERVICE_SEARCH_DEVICE_NOT_REACHABLE)
+    0x05 -> INQUIRY_TERMINATED,
+    0x06 -> SERVICE_SEARCH_DEVICE_NOT_REACHABLE,
+    0x07 -> INQUIRY_ERROR)
 
-  private val discoveryListener = new DiscoveryListener {
+  private class MyDiscoveryListener extends DiscoveryListener {
     def deviceDiscovered(btRemoteDevice: RemoteDevice, classOfDevice: DeviceClass) = {
-      discoveredCallBack(BluetoothDevice(btRemoteDevice, classOfDevice))
-      var name: String = ""
-      try name = btRemoteDevice.getFriendlyName(false)
-      catch { case e: Exception => name = btRemoteDevice.getBluetoothAddress }
-      Log.info(s"""
-				  device found: $name
-				  btDevice $btRemoteDevice
-				  deviceClass $classOfDevice""")
+      Log.info(s"""btDevice $btRemoteDevice, deviceClass $classOfDevice""")
+      deviceDiscovered_ onNext BluetoothDevice(btRemoteDevice, classOfDevice)
     }
 
     def inquiryCompleted(result: Int) = {
       Log.info(result + "=" + discoveryListenerCodes.get(result))
-      inquiryCompletedCallback(discoveryListenerCodes.get(result).getOrElse(INQUIRY_UNKNOWN))
-    }
-
-    def serviceSearchCompleted(transactionID: Int, responseCode: Int) = {
-      Log.info(transactionID + " " + responseCode + "=" + discoveryListenerCodes.get(responseCode))
-      serviceSearchCompletedCallback(discoveryListenerCodes.get(responseCode).getOrElse(SERVICE_SEARCH_UNKNOWN))
+      discoveryState_ onNext discoveryListenerCodes.get(result).getOrElse(INQUIRY_UNKNOWN)
     }
 
     def servicesDiscovered(transactionID: Int, listOfServices: Array[ServiceRecord]) = {
       Log.info(transactionID + " " + listOfServices.mkString)
-      servicesDiscoveredCallback(listOfServices)
+      servicesDiscovered_ onNext BluetoothServices(transactionID, listOfServices)
+    }
+
+    def serviceSearchCompleted(transactionID: Int, responseCode: Int) = {
+      Log.info(transactionID + " " + responseCode + "=" + discoveryListenerCodes.get(responseCode))
+      discoveryState_ onNext discoveryListenerCodes.get(responseCode).getOrElse(SERVICE_SEARCH_UNKNOWN)
     }
   }
 }
