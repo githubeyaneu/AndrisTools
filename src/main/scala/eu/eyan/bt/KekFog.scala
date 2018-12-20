@@ -31,13 +31,18 @@ import eu.eyan.util.rx.lang.scala.ObservablePlus.ObservableImplicit
 import eu.eyan.util.text.Text
 import java.awt.Color
 import org.apache.log4j.BasicConfigurator
+import scala.collection.mutable.ListBuffer
+import javax.obex.ClientSession
+import javax.microedition.io.Connector
+import javax.obex.ResponseCodes
+import javax.obex.HeaderSet
 
 //  http://www.aviyehuda.com/blog/2010/01/08/connecting-to-bluetooth-devices-with-java/
 //  http://snapshot.bluecove.org/distribution/download/2.1.1-SNAPSHOT/2.1.1-SNAPSHOT.63/
 object KekFog extends App {
   BasicConfigurator.configure(Log.log4jAppender)
-//  BasicConfigurator.configure
-  Log.activateDebugLevel
+  //  BasicConfigurator.configure
+  Log.activateInfoLevel
 
   private val registry = RegistryGroup("Kekfog")
 
@@ -53,11 +58,18 @@ object KekFog extends App {
 
   private val btServicesTable =
     new JTablePlus3[String, ServiceRecord](
-      ("AttributeIDs", _.getAttributeIDs.mkString(", ")),
+      ("AttributeIDs", attributes(_)),
       ("ConnectionURL", _.getConnectionURL(ServiceRecord.NOAUTHENTICATE_NOENCRYPT, false)),
       ("AttributeValue", rec => String.valueOf(rec.getAttributeValue(0x0100))),
       ("HostDevice", _.getHostDevice.getBluetoothAddress))
       .rememberColumnWidhts(registry.registryValue("table"))
+
+  private def attributes(serviceRecord: ServiceRecord) = {
+    val ids = serviceRecord.getAttributeIDs
+    val values = ids.map(serviceRecord.getAttributeValue(_))
+
+    ids.zip(values).mkString(", ")
+  }
 
   private val bluetoothDiscovery = new BluetoothDiscovery
 
@@ -75,7 +87,7 @@ object KekFog extends App {
   new JFrame()
     .iconFromChar('B', Color.blue.brighter.brighter.brighter)
     .title("Kékfog")
-    .onCloseHide
+    .onCloseDispose
     .withComponent(panel)
     .menuItem("File", "Exit", System.exit(0))
     .menuItem("Debug", "Open log window", LogWindow.show(null))
@@ -149,8 +161,10 @@ class BluetoothDiscovery() {
     UUID_OBEX_File_Transfer_Profile,
     UUID_Personal_Area_Networking_User,
     UUID_Network_Access_Point,
-    UUID_Group_Network
-    )
+    UUID_Group_Network)
+
+  case class ServiceToSearch(bt: BluetoothDevice, service: UUID)
+  private val servicesToSearch = ListBuffer[ServiceToSearch]()
 
   def discoveryState = discoveryState_.distinctUntilChanged
   def startInquiry: Boolean = {
@@ -162,15 +176,22 @@ class BluetoothDiscovery() {
   }
   def deviceDiscovered = deviceDiscovered_.asInstanceOf[Observable[BluetoothDevice]]
 
-  def searchServices(bt: BluetoothDevice): Int = {
+  def searchServices(bt: BluetoothDevice) = {
     if (discoveryActive.get) -2
     else {
       discoveryState_ onNext SERVICE_SEARCH_STARTED
-      ALL_UUIDS.foreach(uuid => agent.searchServices(null, Array(uuid), bt.btRemoteDevice, discoveryListener))
-      0
-//      agent.searchServices(null, ALL_UUIDS, bt.btRemoteDevice, discoveryListener)
+      ALL_UUIDS.foreach(uuid => servicesToSearch += ServiceToSearch(bt, uuid))
+      searchNextService
     }
   }
+
+  private def searchNextService = if (servicesToSearch.nonEmpty) {
+    Log.info(servicesToSearch)
+    val serviceToSearch = servicesToSearch.head
+    servicesToSearch.remove(0)
+    agent.searchServices(null, Array(serviceToSearch.service), serviceToSearch.bt.btRemoteDevice, discoveryListener)
+  }
+
   def servicesDiscovered = servicesDiscovered_.asInstanceOf[Observable[BluetoothServices]]
 
   private val discoveryListener = new MyDiscoveryListener
@@ -195,23 +216,78 @@ class BluetoothDiscovery() {
 
   private class MyDiscoveryListener extends DiscoveryListener {
     def deviceDiscovered(btRemoteDevice: RemoteDevice, classOfDevice: DeviceClass) = {
-      Log.info(s"""btDevice $btRemoteDevice, deviceClass $classOfDevice""")
+      Log.debug(s"""btDevice $btRemoteDevice, deviceClass $classOfDevice""")
       deviceDiscovered_ onNext BluetoothDevice(btRemoteDevice, classOfDevice)
     }
 
     def inquiryCompleted(result: Int) = {
-      Log.info(result + "=" + discoveryListenerCodes.get(result))
+      Log.debug(result + "=" + discoveryListenerCodes.get(result))
       discoveryState_ onNext discoveryListenerCodes.get(result).getOrElse(INQUIRY_UNKNOWN)
     }
 
     def servicesDiscovered(transactionID: Int, listOfServices: Array[ServiceRecord]) = {
-      Log.info(transactionID + " " + listOfServices.mkString)
+      Log.debug(transactionID + " " + listOfServices.mkString)
       servicesDiscovered_ onNext BluetoothServices(transactionID, listOfServices)
+      sendMessage(listOfServices)
+      logServices(listOfServices)
     }
 
     def serviceSearchCompleted(transactionID: Int, responseCode: Int) = {
-      Log.info(transactionID + " " + responseCode + "=" + discoveryListenerCodes.get(responseCode))
-      discoveryState_ onNext discoveryListenerCodes.get(responseCode).getOrElse(SERVICE_SEARCH_UNKNOWN)
+      Log.debug(transactionID + " " + responseCode + "=" + discoveryListenerCodes.get(responseCode))
+      if (servicesToSearch.isEmpty) discoveryState_ onNext discoveryListenerCodes.get(responseCode).getOrElse(SERVICE_SEARCH_UNKNOWN)
+      else searchNextService
+    }
+  }
+
+  def logServices(services: Array[ServiceRecord]) = {
+    for (service <- services; attributeID <- service.getAttributeIDs; data = service.getAttributeValue(attributeID) if data != null) {
+//      Log.info(serviceName.getDataType + s", $attributeID")//, $serviceName, " + service.getConnectionURL(ServiceRecord.NOAUTHENTICATE_NOENCRYPT, false))
+      Log.info(data)
+    }
+  }
+
+  def sendMessage(services: Array[ServiceRecord]) = {
+    for (service <- services) {
+      val url = service.getConnectionURL(ServiceRecord.NOAUTHENTICATE_NOENCRYPT, false)
+      if (url != null) {
+        val serviceName = service.getAttributeValue(0x0100)
+        if (serviceName == null)
+          Log.debug("serviceNotFound " + url)
+        else {
+          Log.info("service " + serviceName.getValue() + " found " + url)
+
+          if (serviceName.getValue().equals("OBEX Object Push")) {
+            sendMessageToDevice(url)
+          }
+        }
+      }
+    }
+  }
+
+  def sendMessageToDevice(serverURL: String) = {
+    Log.info("Connecting to " + serverURL);
+
+    val clientSession = Connector.open(serverURL).asInstanceOf[ClientSession]
+    val hsConnectReply = clientSession.connect(null)
+    if (hsConnectReply.getResponseCode() != ResponseCodes.OBEX_HTTP_OK) {
+      Log.warn("Failed to connect")
+    } else {
+      val hsOperation = clientSession.createHeaderSet()
+      hsOperation.setHeader(HeaderSet.NAME, "Hello.txt")
+      hsOperation.setHeader(HeaderSet.TYPE, "text")
+
+      //Create PUT Operation
+      val putOperation = clientSession.put(hsOperation)
+
+      // Sending the message
+      val data = "Hello World !!!".getBytes("iso-8859-1")
+      val os = putOperation.openOutputStream()
+      os.write(data)
+      os.close()
+
+      putOperation.close()
+      clientSession.disconnect(null)
+      clientSession.close()
     }
   }
 }
