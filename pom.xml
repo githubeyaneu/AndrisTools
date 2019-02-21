@@ -216,8 +216,13 @@
 <!-- 			<artifactId>bluecove</artifactId> -->
 <!-- 			<version>2.1.0</version> -->
 <!-- 		</dependency> -->
-
-
+		<dependency>
+			<groupId>net.sf.bluecove</groupId>
+			<artifactId>bluecove</artifactId>
+			<version>2.1.1-SNAPSHOT</version>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/src/main/resources/lib/bluecove-2.1.1-SNAPSHOT.jar</systemPath>
+		</dependency>
 
 	</dependencies>
 
