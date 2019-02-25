@@ -40,6 +40,7 @@ import eu.eyan.util.scala.TryCatchFinallyClose
 import scala.io.BufferedSource
 import eu.eyan.util.swing.JProgressBarPlus
 import javax.swing.JTextField
+import javax.swing.JScrollPane
 
 /**
  * TODO: konfig másodperc -> change, dont react immediately
@@ -51,15 +52,15 @@ object PVTools extends App {
   Log.activateInfoLevel
   LogWindow.redirectSystemOutAndErrToLogWindow
 
-  /***************************  UI  ***************************************************/
+/***************************  UI  ***************************************************/
 
   val TITLE = "Photo and video import"
 
   val panel = new JPanelWithFrameLayout().withBorders.withSeparators
     .newColumn.newColumnFPG
 
-  panel.newRow.addLabel("Import path: ").cursor_HAND_CURSOR.onClicked(importPathTextField.getText.openAsFile)
-  val importPathTextField = panel.nextColumn.addTextField("", 30).rememberValueInRegistry("importPath")
+  panel.newRow("f:p:g").addLabel("Import path: ").cursor_HAND_CURSOR
+  val importPathTextField = panel.nextColumn.addTextFieldMulti("importPathTextField", 30, List()).rememberValueInRegistry("importPathTextFields")
 
   panel.newRow.addLabel("Export path: ").cursor_HAND_CURSOR.onClicked(exportPathTextField.getText.openAsFile)
   val exportPathTextField = panel.nextColumn.addTextField("").rememberValueInRegistry("exportPath")
@@ -91,18 +92,21 @@ object PVTools extends App {
   panel.newRow.addLabel("Progress:")
   val progressBar = panel.nextColumn.addProgressBar()
 
-  panel.newRow.addLabel("More import pathes:")
-  val moreImport = panel.nextColumn.addMore(new JTextField(""))
-
-  val frame = new JFrame().title(TITLE).onCloseHide.iconFromChar('I', Color.ORANGE).addToSystemTray().withComponent(panel)
-    .menuItem("File", "Exit", System.exit(0))
-    .menuItem("Debug", "Open log window", LogWindow.show(panel))
-    .menuItem("Debug", "Copy logs to clipboard", ClipboardPlus.copyToClipboard(LogWindow.getAllLogs))
-    .menuItem("Debug", "Clear registry values", RegistryPlus.clear(TITLE))
-    .menuItem("Help", "Write email", writeEmail)
-    .menuItem("Help", "About", alert("This is not an official tool, no responsibilities are taken. Use it at your own risk."))
-    .packAndSetVisible
-    .center
+  val frame =
+    new JFrame()
+      .title(TITLE)
+      .onCloseHide
+      .iconFromChar('I', Color.ORANGE)
+      .addToSystemTray()
+      .withComponent(new JScrollPane(panel))
+      .menuItem("File", "Exit", System.exit(0))
+      .menuItem("Debug", "Open log window", LogWindow.show(panel))
+      .menuItem("Debug", "Copy logs to clipboard", ClipboardPlus.copyToClipboard(LogWindow.getAllLogs))
+      .menuItem("Debug", "Clear registry values", RegistryPlus.clear(TITLE))
+      .menuItem("Help", "Write email", writeEmail)
+      .menuItem("Help", "About", alert("This is not an official tool, no responsibilities are taken. Use it at your own risk."))
+      .packAndSetVisible
+      .center
 
   def importFiles = {
     importLabel.text("Importing")
@@ -165,24 +169,30 @@ object PVTools extends App {
   def checkFilesToImport: List[File] = {
     Log.info("Checking files to import")
     checkToImportButton.setEnabled(false)
-    try if (!importPathTextField.getText.asDir.existsAndDir) { alert("Import dir does not exists."); List() }
-    else if (!exportPathTextField.getText.asDir.existsAndDir) { alert("Export dir does not exists."); List() }
-    else if (!tempPathTextField.getText.asDir.existsAndDir) { alert("Temp dir does not exists."); List() }
-    else if (ffmpegPathTextField.getText.asFile.notExists) { alert("ffmpeg does not exists."); List() }
-    else {
-      val allFiles = importPathTextField.getText.asDir.subFiles.toList.filter(_.endsWith(extensionsToImportTextField.getText.split(","): _*))
-      Log.trace("allFiles\r\n" + allFiles.mkStringNL)
-      Log.trace("\r\nalreadyImportedFiles\r\n" + alreadyImportedFiles.mkStringNL)
-      val filesToImport = allFiles.diff(alreadyImportedFiles)
-      Log.trace("filesToImport " + filesToImport.mkStringNL)
-      val filesToImportSizeSum = filesToImport.map(_.length).sum
+    try
+      if (importPathTextField.getValues.size < 1) { alert("At least on import dir please."); List() }
+      else if (!importPathTextField.getValues.map(_.asDir.existsAndDir).foldLeft(true)((d1, d2) => d1 && d2)) { alert("One of the import dirs does not exists."); List() }
+      else if (!exportPathTextField.getText.asDir.existsAndDir) { alert("Export dir does not exists."); List() }
+      else if (!tempPathTextField.getText.asDir.existsAndDir) { alert("Temp dir does not exists."); List() }
+      else if (ffmpegPathTextField.getText.asFile.notExists) { alert("ffmpeg does not exists."); List() }
+      else {
+        val allFiles = {
+          val dirs = importPathTextField.getValues
+          val dirsFiles = dirs.map(_.asDir.subFiles.toList.filter(_.endsWith(extensionsToImportTextField.getText.split(","): _*)))
+          dirsFiles.flatten
+        }
+        Log.trace("allFiles\r\n" + allFiles.mkStringNL)
+        Log.trace("\r\nalreadyImportedFiles\r\n" + alreadyImportedFiles.mkStringNL)
+        val filesToImport = allFiles.diff(alreadyImportedFiles)
+        Log.trace("filesToImport " + filesToImport.mkStringNL)
+        val filesToImportSizeSum = filesToImport.map(_.length).sum
 
-      checkToImportLabel.setText(filesToImport.size + " files to import, " + (filesToImportSizeSum / 1024 / 1024) + "MB")
-      Log.info("Checking files to import: " + filesToImport.size + " files.")
-      if (filesToImport.size > 0) frame.state_Normal.visible.toFront
+        checkToImportLabel.setText(filesToImport.size + " files to import, " + (filesToImportSizeSum / 1024 / 1024) + "MB")
+        Log.info("Checking files to import: " + filesToImport.size + " files.")
+        if (filesToImport.size > 0) frame.state_Normal.visible.toFront
 
-      filesToImport
-    }
+        filesToImport
+      }
     finally checkToImportButton.setEnabled(true)
   }
 
