@@ -42,7 +42,7 @@ object Japan extends App {
 
   trait FieldType { def value: Int }
   case object Full extends FieldType { override def toString() = "X"; def value = 1 }
-  case object Empty extends FieldType { override def toString() = " "; def value = 0 }
+  case object Empty extends FieldType { override def toString() = "_"; def value = 0 }
   case object Unknown extends FieldType { override def toString() = "?"; def value = ??? }
 
   //  val size = 45
@@ -75,46 +75,4 @@ object Japan extends App {
   //  val countssFilteres = filtered.foldLeft(List.fill(size)(0))((counts, fields) => counts.zip(fields.map(_.value)).map(t=>t._1+t._2))
   //  println(countssFilteres)
   //  println(countssFilteres.map(ct => if(ct==filtered.size) Full else if(ct==0) Empty else Unknown))
-  val up = """C:\DEVELOPING_1\projects\AndrisTools\src\main\scala\eu\eyan\japan\fent.txt"""
-  val left = """C:\DEVELOPING_1\projects\AndrisTools\src\main\scala\eu\eyan\japan\bal.txt"""
-  val ups = up.linesFromFile.toList.map(_.split("\t").toList.map(_.toInt))
-  val lefts = left.linesFromFile.toList.map(_.split("\t").toList.map(_.toInt))
-
-  println(ups.mkString("\r\n"))
-  println(lefts.mkString("\r\n"))
-
-  case class JapanTable(lefts: List[List[Int]], ups: List[List[Int]]) {
-    lazy val width = ups.size
-    lazy val height = lefts.size
-    lazy val upsMax = ups.map(_.size).max
-    lazy val leftsMax = lefts.map(_.size).max
-  }
-
-  val japan = JapanTable(lefts, ups)
-
-  val panel = new JPanelWithFrameLayout()
-  val cols = japan.width + japan.leftsMax
-  val rows = japan.height + japan.upsMax
-  for (x <- 0 to cols) panel.newColumn("15px")
-  for (x <- 0 to rows) panel.newRow("15px")
-
-  for (x <- 0 until japan.width; nums = japan.ups(x); idx <- 0 until nums.size) {
-    val col = japan.leftsMax + x + 1
-    val row = japan.upsMax - nums.size + idx + 1
-    println((col, row))
-    panel.add(new JLabel("" + nums(idx)), CC.xy(col, row))
-  }
-  
-  for (y <- 0 until japan.height; nums = japan.lefts(y); idx <- 0 until nums.size) {
-	  val row = japan.upsMax + y + 1
-			  val col = japan.leftsMax - nums.size + idx + 1
-			  println((col, row))
-			  panel.add(new JLabel("" + nums(idx)), CC.xy(col, row))
-  }
-
-  for (col <- japan.leftsMax + 1 to cols; row <- japan.upsMax + 1 to rows)
-    panel.add(new JLabel("?"), CC.xy(col, row))
-
-  new JFrame().withComponent(panel).onCloseExit.packAndSetVisible
-
 }
