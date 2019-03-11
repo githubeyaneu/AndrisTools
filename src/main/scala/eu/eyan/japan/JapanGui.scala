@@ -18,6 +18,11 @@ import rx.lang.scala.Observable
 import eu.eyan.util.rx.lang.scala.ObservablePlus
 import eu.eyan.japan.Japan.Full
 import eu.eyan.japan.Japan.Empty
+import scala.concurrent.Await
+import scala.concurrent.Future
+import java.util.concurrent.TimeoutException
+import eu.eyan.util.java.lang.ThreadPlus
+import eu.eyan.util.rx.lang.scala.subjects.BehaviorSubjectPlus.BehaviorSubjectImplicit
 
 object JapanGui extends App {
   val up = """src\main\scala\eu\eyan\japan\fent.txt"""
@@ -134,22 +139,52 @@ object JapanGui extends App {
 
   val japanAlgo = new Japan2()
 
+  import scala.concurrent._
+  import scala.concurrent.duration._
+  import ExecutionContext.Implicits.global
+  def timeout[T](ms: Int, action: => T) = {
+    val threadAction = ThreadPlus.run(action)
+    val threadTimeout = ThreadPlus.run(Thread.sleep(ms))
+    while (threadAction.done$.get[Boolean]==false && threadTimeout.done$.get[Boolean]==false) {}
+    threadAction.stop
+    threadTimeout.stop
+    threadAction.result
+    
+//    val done = thread.done$
+//    val timer = Observable.timer(ms milliseconds).map(x => false)
+//    val merged = timer.merge(done)
+//    val ready = merged.toBlocking.lastOption
+//    thread.stop
+//    val res = ready.map(t => thread.result).flatten
+//    res    
+//    val future = Future(action)
+//    try {
+//      Option(Await.result(future, ms milliseconds))
+//    } catch {
+//      case e: TimeoutException => {
+//        print("timeout")
+//        None
+//      }
+//    }
+  }
+
+  val tms = 500
   def rowClick(rowIdx: Int) = {
-    println(rowIdx)
-    println(japan.row(rowIdx))
-    val reduced = japanAlgo.reduce(japan.row(rowIdx), japan.rowBlocks(rowIdx))
-    reduced.foreach(reduced => for (x <- 0 until japan.width) japan.update(x, rowIdx, reduced(x)))
-    println("done")
+    print("row" + rowIdx + " ")
+    timeout(tms, {
+      japanAlgo.reduce(japan.row(rowIdx), japan.rowBlocks(rowIdx))
+    }).flatten.foreach(reduced => for (x <- 0 until japan.width) japan.update(x, rowIdx, reduced(x)))
+    println(".")
   }
 
   def colClick(colIdx: Int) = {
-    println(colIdx)
-    println(japan.col(colIdx))
-    val reduced = japanAlgo.reduce(japan.col(colIdx), japan.colBlocks(colIdx))
-    reduced.foreach(reduced => for (y <- 0 until japan.height) japan.update(colIdx, y, reduced(y)))
-    println("done")
+    print("col" + colIdx + " ")
+    timeout(tms, {
+      japanAlgo.reduce(japan.col(colIdx), japan.colBlocks(colIdx))
+    }).flatten.foreach(reduced => for (y <- 0 until japan.height) japan.update(colIdx, y, reduced(y)))
+    println(".")
   }
-  
+
   for (x <- 0 until japan.width) colClick(x)
   for (y <- 0 until japan.height) rowClick(y)
 }
