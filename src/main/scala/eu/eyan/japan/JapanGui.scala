@@ -71,8 +71,8 @@ object JapanGui extends App {
   val panel = new JPanelWithFrameLayout()
   val cols = japan.width + japan.leftsMax
   val rows = japan.height + japan.upsMax
-  for (x <- 0 to cols-1) panel.newColumn("15px")
-  for (x <- 0 to rows-1) panel.newRow("15px")
+  for (x <- 0 to cols - 1) panel.newColumn("15px")
+  for (x <- 0 to rows - 1) panel.newRow("15px")
 
   panel.newColumn("40px:g")
   panel.newRow("40px:g")
@@ -102,7 +102,7 @@ object JapanGui extends App {
     label.text(japan.field$(x, y))
     panel.add(label, CC.xy(col, row))
   }
-  
+
   //TODO move to somwhere else
   implicit class LongToFieldType(long: Long) {
     @tailrec
@@ -111,7 +111,7 @@ object JapanGui extends App {
   }
 
   def binom(n: Long, k: Long): Long = (n.!) / ((k.!) * (n - k).!)
-  
+
   def combinationsWithRepetition(places: Long, items: Long) = binom(places + items - 1, items)
 
   implicit class BigIntToFieldType(bigInt: BigInt) {
@@ -120,11 +120,10 @@ object JapanGui extends App {
     def ! = factorial(bigInt)
   }
   def binomBi(n: BigInt, k: BigInt): BigInt = (n.!) / ((k.!) * (n - k).!)
-      def combinationsWithRepetitionBi(places: Long, items: Long) = binomBi(places + items - 1, items)
-      //TODO move to somwhere else
-      
-      
-      
+  // binom: n * n-1 * n-2 * ... * n-k+1 / (k * k-1 * k-2 * ... * 1)
+  def combinationsWithRepetitionBi(places: Long, items: Long) = binomBi(places + items - 1, items)
+  //TODO move to somwhere else
+
   for (x <- 0 until japan.width) {
     val col = x + japan.leftsMax + 1
     val row = japan.height + japan.upsMax + 1
@@ -135,7 +134,7 @@ object JapanGui extends App {
       val unknowns = list.filter(_ == Unknown).size
       val items = japan.height - colBlocks.sum - colBlocks.size + 1
       val places = colBlocks.size + 1
-      (""+combinationsWithRepetitionBi(items, places)).length
+      ("" + combinationsWithRepetitionBi(items, places)).length
     })
 
     val label = new JLabel(".")
@@ -157,7 +156,7 @@ object JapanGui extends App {
       val items = japan.width - rowBlocks.sum - rowBlocks.size + 1
       val places = rowBlocks.size + 1
       //(combinationsWithRepetition(places, items) + "").length
-      (""+combinationsWithRepetitionBi(items, places)).length+", " + (places, items)
+      ("" + combinationsWithRepetitionBi(items, places)).length + ", " + (places, items)
     })
 
     val label = new JLabel(".")
@@ -190,7 +189,7 @@ object JapanGui extends App {
   def rowClick(rowIdx: Int) = {
     //    print("row" + rowIdx + " ")
     val olds = japan.row(rowIdx)
-    val japanAlgo = new Japan4()
+    val japanAlgo = new Japan5()
     val news = timeout(tms, japanAlgo.reduce(olds.toArray, japan.rowBlocks(rowIdx).toArray), japanAlgo.cancel).flatten
 
     if (news.isEmpty) rowsTimeout.add(rowIdx)
@@ -205,7 +204,7 @@ object JapanGui extends App {
   def colClick(colIdx: Int) = {
     //    print("col" + colIdx + " ")
     val olds = japan.col(colIdx)
-    val japanAlgo = new Japan4()
+    val japanAlgo = new Japan5()
     val news = timeout(tms, japanAlgo.reduce(olds.toArray, japan.colBlocks(colIdx).toArray), japanAlgo.cancel).flatten
 
     if (news.isEmpty) colsTimeout.add(colIdx)

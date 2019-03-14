@@ -13,7 +13,6 @@ object KtoN extends App {
 
   def kton(k: Int, n: Int, callback: Array[Int] => Unit) = {
     def ktonSub(array: Array[Int], remainingStep: Int, remainingItems: Int): Unit = {
-      //println((k,n,array.toList, remainingStep, remainingItems))
       if (remainingStep == 1) {
         array(n - 1) = remainingItems
         callback(array)
