@@ -9,31 +9,36 @@ import eu.eyan.japan.Japan.Empty
 import eu.eyan.log.Log
 import org.junit.Ignore
 import scala.annotation.tailrec
+import eu.eyan.japan.Japan.FieldType
+import eu.eyan.japan.Japan.FieldType
 
-class Japan2 extends TestPlus {
+class Japan3 extends TestPlus{
 
-  def reduce(knownFields: Seq[FieldType], blocks: Seq[Int]): Option[Seq[FieldType]] = {
+  private var cancelled = false
+  def cancel = cancelled = true
+  
+  type Fields = Seq[FieldType]
+  
+  def reduce(knownFields: Fields, blocks: Seq[Int]): Option[Fields] = {
     val stream = generateFields(knownFields, blocks)
     if (stream.isEmpty) None
     else Option(stream.reduce(reduceFields))
   }
 
-  def reduceFields(cumulated: Seq[FieldType], next: Seq[FieldType]) = {
-    for (idx <- 0 until cumulated.size) yield {
-      //assert(knownFields(idx) == Unknown || knownFields(idx) == next(idx))
-      val cumIdx = cumulated(idx)
-      val nextIdx = next(idx)
-      if (cumIdx == Unknown) Unknown
-      else if (cumIdx == nextIdx) cumIdx
+  def reduceFields(cumulated: Fields, next: Fields) = {
+    def reduceFiledsSub(cumAndNext: Tuple2[FieldType, FieldType])={
+      if (cumAndNext._1 == Unknown) Unknown
+      else if (cumAndNext._1 == cumAndNext._2) cumAndNext._1
       else Unknown
     }
+    cumulated.zip(next).map(reduceFiledsSub)
   }
 
   def applies(known: FieldType, field: FieldType): Boolean = known == Unknown || known == field
 
-  def applies(knownFields: Seq[FieldType], fields: Seq[FieldType]): Boolean = {
-    //assert(knownFields.size == fields.size)
-    val oneFieldNotApplyable = knownFields.zip(fields).exists { case (known, field) => !applies(known, field) }
+  def applies(knownFields: Fields)(fields: Fields): Boolean = {
+    def appliesSub(tuple: Tuple2[FieldType, FieldType])=  !applies(tuple._1, tuple._2)
+    val oneFieldNotApplyable = knownFields.zip(fields).exists(appliesSub)
     !oneFieldNotApplyable
   }
 
@@ -41,28 +46,31 @@ class Japan2 extends TestPlus {
     def *(fieldType: FieldType) = fieldType(int)
   }
 
-  def generateFields(knownFields: Seq[FieldType], blocks: Seq[Int]): Stream[Seq[FieldType]] = {
-    //    assert(knownFields.size <= lt)
-    //    assert(blocks.sum + blocks.size - 1 <= lt)
+  def generateFields(knownFields: Fields, blocks: Seq[Int]): Stream[Fields] = {
+    generateFieldsAcc(knownFields, blocks, Seq())
+  }
+  
+  def empties(nr: Int) = Empty(nr)
 
+//  @tailrec
+  def generateFieldsAcc(knownFields: Fields, blocks: Seq[Int], acc: Fields): Stream[Fields] = {
     val length = knownFields.size
     val remainingEmptySpace = length - (blocks.sum + blocks.size - 1)
-
-    if (blocks.size == 0) {
-      val empties = length * Empty
-      if (applies(knownFields, empties)) Stream(empties)
+    if(cancelled) Stream.Empty
+    else if (blocks.size == 0) {
+      val empties = Empty(length)
+      if (applies(knownFields)(empties)) Stream(acc ++ empties)
       else Stream.Empty
     } else {
-      val nextss = (0 to remainingEmptySpace).map(remainingEmptySpace => {
-        val pre = remainingEmptySpace * Empty ++ blocks.head * Full ++ (if (blocks.size < 2) Seq() else 1 * Empty)
-        val nextKnown = knownFields.slice(pre.size, knownFields.size)
-        val posts =
-          if (applies(knownFields.slice(0, pre.size), pre)) generateFields(nextKnown, blocks.tail)
-          else Stream.Empty
-        posts.map(post => pre ++ post)
-      })
-
-      nextss.toStream.flatten
+      val preEmptySpaces = Stream.range(0, remainingEmptySpace + 1, 1).map(empties)
+      val blockFollowingEmpty = blocks.head * Full ++ (if (blocks.size < 2) Seq() else 1 * Empty)
+      def prepend(l1: Fields)(l2: Fields) = l2 ++ l1
+      val pres = preEmptySpaces.map(prepend(blockFollowingEmpty))
+      def filter(pre: Fields) = applies(knownFields.slice(0, pre.size))(pre)
+      val filteredPres = pres.filter(filter)
+      def generator(pre: Fields) = generateFieldsAcc(knownFields.slice(pre.size, knownFields.size), blocks.tail, acc ++ pre)
+      val nextss = filteredPres.map(generator)
+      nextss.flatten
     }
   }
 
@@ -71,13 +79,28 @@ class Japan2 extends TestPlus {
   val E = Empty
 
   @Test
+  def generateFields_allUnknown: Unit = {
+    generateFields(List(?, ?, ?, ?, ?), List(2, 1)).toList ==> List(List(X, X, E, X, E), List(X, X, E, E, X), List(E, X, X, E, X))
+    generateFields(List(?, ?, ?, ?, ?), List(1, 2)).toList ==> List(List(X, E, X, X, E), List(X, E, E, X, X), List(E, X, E, X, X))
+    generateFields(List(?, ?, ?, ?), List(1, 2)) ==> Stream(List(X, E, X, X))
+    generateFields(List(?, ?, ?, ?), List(1, 1)).toList ==> List(List(X, E, X, E), List(X, E, E, X), List(E, X, E, X))
+    generateFields(List(?, ?, ?), List(1, 1)) ==> Stream(List(X, E, X))
+    generateFields(List(?, ?, ?), List(1)) ==> Stream(List(X, E, E), List(E, X, E), List(E, E, X))
+    generateFields(List(?, ?), List(1)) ==> Stream(List(X, E), List(E, X))
+    generateFields(List(?, ?), List()) ==> Stream(List(E, E))
+    generateFields(List(?, ?), List(2)) ==> Stream(List(X, X))
+    generateFields(List(?), List()) ==> Stream(List(E))
+    generateFields(List(?), List(1)) ==> Stream(List(X))
+  }
+
+  @Test
   def generateFields_Known: Unit = {
-    //    generateFields(5, List(?, ?, ?, ?, ?), List(2, 1)).toList ==> List(List(X, X, E, X, E), List(X, X, E, E, X), List(E, X, X, E, X))
-    //    generateFields(5, List(?, ?, ?, ?, ?), List(1, 2)).toList ==> List(List(X, E, X, X, E), List(X, E, E, X, X), List(E, X, E, X, X))
-    //    generateFields(4, List(?, ?, ?, ?), List(1, 2)) ==> Stream(List(X, E, X, X))
-    //    generateFields(4, List(?, ?, ?, ?), List(1, 1)).toList ==> List(List(X, E, X, E), List(X, E, E, X), List(E, X, E, X))
-    //    generateFields(3, List(?, ?, ?), List(1, 1)) ==> Stream(List(X, E, X))
-    //    generateFields(3, List(?, ?, ?), List(1)) ==> Stream(List(X, E, E), List(E, X, E), List(E, E, X))
+    generateFields(List(?, ?, ?, ?, ?), List(2, 1)).toList ==> List(List(X, X, E, X, E), List(X, X, E, E, X), List(E, X, X, E, X))
+    generateFields(List(?, ?, ?, ?, ?), List(1, 2)).toList ==> List(List(X, E, X, X, E), List(X, E, E, X, X), List(E, X, E, X, X))
+    generateFields(List(?, ?, ?, ?), List(1, 2)) ==> Stream(List(X, E, X, X))
+    generateFields(List(?, ?, ?, ?), List(1, 1)).toList ==> List(List(X, E, X, E), List(X, E, E, X), List(E, X, E, X))
+    generateFields(List(?, ?, ?), List(1, 1)) ==> Stream(List(X, E, X))
+    generateFields(List(?, ?, ?), List(1)) ==> Stream(List(X, E, E), List(E, X, E), List(E, E, X))
 
     generateFields(List(X, E), List(1)) ==> Stream(List(X, E))
     generateFields(List(E, X), List(1)) ==> Stream(List(E, X))
@@ -105,21 +128,6 @@ class Japan2 extends TestPlus {
 
     generateFields(List(E), List(1)) ==> Stream()
     generateFields(List(X), List(1)) ==> Stream(List(X))
-  }
-
-  @Test
-  def generateFields_allUnknown: Unit = {
-    generateFields(List(?, ?, ?, ?, ?), List(2, 1)).toList ==> List(List(X, X, E, X, E), List(X, X, E, E, X), List(E, X, X, E, X))
-    generateFields(List(?, ?, ?, ?, ?), List(1, 2)).toList ==> List(List(X, E, X, X, E), List(X, E, E, X, X), List(E, X, E, X, X))
-    generateFields(List(?, ?, ?, ?), List(1, 2)) ==> Stream(List(X, E, X, X))
-    generateFields(List(?, ?, ?, ?), List(1, 1)).toList ==> List(List(X, E, X, E), List(X, E, E, X), List(E, X, E, X))
-    generateFields(List(?, ?, ?), List(1, 1)) ==> Stream(List(X, E, X))
-    generateFields(List(?, ?, ?), List(1)) ==> Stream(List(X, E, E), List(E, X, E), List(E, E, X))
-    generateFields(List(?, ?), List(1)) ==> Stream(List(X, E), List(E, X))
-    generateFields(List(?, ?), List()) ==> Stream(List(E, E))
-    generateFields(List(?, ?), List(2)) ==> Stream(List(X, X))
-    generateFields(List(?), List()) ==> Stream(List(E))
-    generateFields(List(?), List(1)) ==> Stream(List(X))
   }
 
   @Test
