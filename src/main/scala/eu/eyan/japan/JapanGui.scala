@@ -145,27 +145,27 @@ object JapanGui extends App {
   def timeout[T](ms: Int, action: => T) = {
     val threadAction = ThreadPlus.run(action)
     val threadTimeout = ThreadPlus.run(Thread.sleep(ms))
-    while (threadAction.done$.get[Boolean]==false && threadTimeout.done$.get[Boolean]==false) {}
+    while (threadAction.done$.get[Boolean] == false && threadTimeout.done$.get[Boolean] == false) {}
     threadAction.stop
     threadTimeout.stop
     threadAction.result
-    
-//    val done = thread.done$
-//    val timer = Observable.timer(ms milliseconds).map(x => false)
-//    val merged = timer.merge(done)
-//    val ready = merged.toBlocking.lastOption
-//    thread.stop
-//    val res = ready.map(t => thread.result).flatten
-//    res    
-//    val future = Future(action)
-//    try {
-//      Option(Await.result(future, ms milliseconds))
-//    } catch {
-//      case e: TimeoutException => {
-//        print("timeout")
-//        None
-//      }
-//    }
+
+    //    val done = thread.done$
+    //    val timer = Observable.timer(ms milliseconds).map(x => false)
+    //    val merged = timer.merge(done)
+    //    val ready = merged.toBlocking.lastOption
+    //    thread.stop
+    //    val res = ready.map(t => thread.result).flatten
+    //    res
+    //    val future = Future(action)
+    //    try {
+    //      Option(Await.result(future, ms milliseconds))
+    //    } catch {
+    //      case e: TimeoutException => {
+    //        print("timeout")
+    //        None
+    //      }
+    //    }
   }
 
   val tms = 500
@@ -187,4 +187,5 @@ object JapanGui extends App {
 
   for (x <- 0 until japan.width) colClick(x)
   for (y <- 0 until japan.height) rowClick(y)
+
 }
