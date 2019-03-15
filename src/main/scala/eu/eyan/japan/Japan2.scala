@@ -2,10 +2,6 @@ package eu.eyan.japan
 
 import org.junit.Test
 import eu.eyan.testutil.TestPlus
-import eu.eyan.japan.Japan.FieldType
-import eu.eyan.japan.Japan.Unknown
-import eu.eyan.japan.Japan.Full
-import eu.eyan.japan.Japan.Empty
 import eu.eyan.log.Log
 import org.junit.Ignore
 import scala.annotation.tailrec

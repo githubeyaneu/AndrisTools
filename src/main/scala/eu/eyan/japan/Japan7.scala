@@ -2,8 +2,9 @@ package eu.eyan.japan
 
 import org.junit.Test
 import eu.eyan.testutil.TestPlus
+import scala.annotation.tailrec
 
-object Japan5 extends App {
+object Japan7 extends App {
 
   var ct = 0
   val st = System.currentTimeMillis
@@ -19,66 +20,67 @@ object Japan5 extends App {
   println(ct)
 }
 
-class Japan5 extends TestPlus {
+class Japan7 extends TestPlus {
   type Fields = Array[FieldType]
-  def cancel = stopped = true
-  private var stopped = false
+  def cancel = cancelled = true
+  private var cancelled = false
 
   def reduce(knownFields: Fields, blocks: Array[Int]): Option[Fields] = {
-    val all = JapanGui.combinationsWithRepetitionBi(blocks.size+1, knownFields.size - (if (blocks.size == 0) 0 else (blocks.sum + blocks.size - 1)))
-    val cumulated = Array.fill[FieldType](knownFields.size)(null)
-
-    val st = System.currentTimeMillis
-    var ct = 0
-    kton(blocks, knownFields.size - (if (blocks.size == 0) 0 else (blocks.sum + blocks.size - 1)), next => if (applies(knownFields)(next)) {
-      ct = ct + 1
-      if (ct % (10 * 1000 * 1000) == 0) println(ct + " " + (System.currentTimeMillis - st) + "ms"+" "+((all/ct)*(System.currentTimeMillis - st))/60000+"min")
-      for (idx <- 0 until cumulated.size) {
-        val cumField = cumulated(idx)
-        val nextField = next(idx)
-        cumulated(idx) = if (cumField == null) nextField else if (cumField == Unknown) Unknown
-        else if (cumField == nextField) cumField
-        else Unknown
-      }
-    })
-
-    if (ct == 0) None else Option(cumulated)
-  }
-
-  def applies(knownFields: Fields)(fields: Fields): Boolean = {
-    val length = knownFields.length
-    def appliesSub(i: Int): Boolean = {
-      if (i >= length) true
-      else if (!(knownFields(i) == Unknown || knownFields(i) == fields(i))) false
-      else appliesSub(i + 1)
-    }
-    appliesSub(0)
-  }
-
-  def kton(blocks: Array[Int], extraEmptySpaces: Int, callback: Fields => Unit) = {
+    val startTime = System.currentTimeMillis
+    val fieldsLength = knownFields.size
     val blocksSize = blocks.size
-    def ktonSub(callback: Fields => Unit, array: Fields, remainingStep: Int, remainingItems: Int, actualIndex: Int): Unit = {
-      if (stopped) {
-      } else if (remainingStep == 1) {
-        for (i <- actualIndex until actualIndex + remainingItems) array(i) = Empty
-        callback(array)
-      } else {
-        for (nextSize <- 0 to remainingItems) {
+    val blocksSum = blocks.sum
+    val blocksAndKnownEmptySpaces = if (blocksSize == 0) 0 else blocksSum + blocksSize - 1
+    val extraEmptySpaces = fieldsLength - blocksAndKnownEmptySpaces
+    val places = blocksSize + 1
+    val allPossibleCombinationsWithoutReduce = JapanGui.combinationsWithRepetitionBi(places, extraEmptySpaces)
 
-          val last = 2 == remainingStep
-          val emptyAfterBlock = if (last) 0 else 1
-          val actualBlockSize = blocks(blocksSize - remainingStep + 1)
+    def generatePossibleFields(callback: Fields => Unit) = {
+      val generatedFields = Unknown ** fieldsLength
 
-          for (i <- actualIndex until actualIndex + nextSize) array(i) = Empty
-          for (i <- actualIndex + nextSize until actualIndex + nextSize + actualBlockSize) array(i) = Full
-          for (i <- actualIndex + nextSize + actualBlockSize until actualIndex + nextSize + actualBlockSize + emptyAfterBlock) array(i) = Empty
+      @tailrec
+      def checkIfFieldsApplyToKnown(fromIndex: Int, untilIndex: Int): Boolean =
+        if (fromIndex >= untilIndex) true
+        else if (knownFields(fromIndex) != Unknown && knownFields(fromIndex) != generatedFields(fromIndex)) false
+        else checkIfFieldsApplyToKnown(fromIndex + 1, untilIndex)
 
-          ktonSub(callback, array, remainingStep - 1, remainingItems - nextSize, actualIndex + nextSize + actualBlockSize + emptyAfterBlock)
+      def generatePossibleFieldsSteps(remainingStep: Int, remainingExtraEmptySpaces: Int, actualIndex: Int): Unit = {
+        if (cancelled) {
+        } else if (remainingStep == 1) {
+          for (i <- actualIndex until actualIndex + remainingExtraEmptySpaces) generatedFields(i) = Empty
+          if (checkIfFieldsApplyToKnown(actualIndex, actualIndex + remainingExtraEmptySpaces)) callback(generatedFields)
+        } else {
+          for (nextSize <- 0 to remainingExtraEmptySpaces) {
+
+            val last = 2 == remainingStep
+            val emptyAfterBlock = if (last) 0 else 1
+            val actualBlockSize = blocks(blocksSize - remainingStep + 1)
+
+            for (i <- actualIndex until actualIndex + nextSize) generatedFields(i) = Empty
+            for (i <- actualIndex + nextSize until actualIndex + nextSize + actualBlockSize) generatedFields(i) = Full
+            for (i <- actualIndex + nextSize + actualBlockSize until actualIndex + nextSize + actualBlockSize + emptyAfterBlock) generatedFields(i) = Empty
+
+            if (checkIfFieldsApplyToKnown(actualIndex, actualIndex + nextSize + actualBlockSize + emptyAfterBlock))
+              generatePossibleFieldsSteps(remainingStep - 1, remainingExtraEmptySpaces - nextSize, actualIndex + nextSize + actualBlockSize + emptyAfterBlock)
+          }
         }
       }
+
+      generatePossibleFieldsSteps(places, extraEmptySpaces, 0)
     }
 
-    ktonSub(callback, Array.fill((if (blocksSize == 0) 0 else blocks.sum + blocksSize - 1) + extraEmptySpaces)(Unknown), blocksSize + 1, extraEmptySpaces, 0)
+    var possibleFieldsCounter = 0
+    val cumulated = Unknown ** fieldsLength
+    def reducePossibleFieldsCallback(next: Fields) = {
+      possibleFieldsCounter = possibleFieldsCounter + 1
+      if (possibleFieldsCounter % (10 * 1000 * 1000) == 0) print("_" + ((allPossibleCombinationsWithoutReduce / possibleFieldsCounter) * (System.currentTimeMillis - startTime)) / 60000 + "min")
+      if (possibleFieldsCounter == 1) next.copyToArray(cumulated)
+      for (idx <- 0 until fieldsLength) if (cumulated(idx) == Unknown || cumulated(idx) != next(idx)) cumulated(idx) = Unknown
+    }
+
+    generatePossibleFields(reducePossibleFieldsCallback)
+
+    if (possibleFieldsCounter == 0) None else Option(cumulated)
   }
 
   val ? = Unknown

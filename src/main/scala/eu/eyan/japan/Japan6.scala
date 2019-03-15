@@ -3,7 +3,7 @@ package eu.eyan.japan
 import org.junit.Test
 import eu.eyan.testutil.TestPlus
 
-object Japan5 extends App {
+object Japan6 extends App {
 
   var ct = 0
   val st = System.currentTimeMillis
@@ -19,20 +19,21 @@ object Japan5 extends App {
   println(ct)
 }
 
-class Japan5 extends TestPlus {
+class Japan6 extends TestPlus {
   type Fields = Array[FieldType]
   def cancel = stopped = true
   private var stopped = false
 
   def reduce(knownFields: Fields, blocks: Array[Int]): Option[Fields] = {
-    val all = JapanGui.combinationsWithRepetitionBi(blocks.size+1, knownFields.size - (if (blocks.size == 0) 0 else (blocks.sum + blocks.size - 1)))
+      val st = System.currentTimeMillis
+    val all = JapanGui.combinationsWithRepetitionBi(blocks.size + 1, knownFields.size - (if (blocks.size == 0) 0 else (blocks.sum + blocks.size - 1)))
+
     val cumulated = Array.fill[FieldType](knownFields.size)(null)
 
-    val st = System.currentTimeMillis
     var ct = 0
-    kton(blocks, knownFields.size - (if (blocks.size == 0) 0 else (blocks.sum + blocks.size - 1)), next => if (applies(knownFields)(next)) {
+    kton(blocks, knownFields.size - (if (blocks.size == 0) 0 else (blocks.sum + blocks.size - 1)), next =>  {
       ct = ct + 1
-      if (ct % (10 * 1000 * 1000) == 0) println(ct + " " + (System.currentTimeMillis - st) + "ms"+" "+((all/ct)*(System.currentTimeMillis - st))/60000+"min")
+      if (ct % (10 * 1000 * 1000) == 0) print("_"+/*ct + " " + (System.currentTimeMillis - st) + "ms" + " " +*/ ((all / ct) * (System.currentTimeMillis - st)) / 60000 + "min")
       for (idx <- 0 until cumulated.size) {
         val cumField = cumulated(idx)
         val nextField = next(idx)
@@ -40,7 +41,7 @@ class Japan5 extends TestPlus {
         else if (cumField == nextField) cumField
         else Unknown
       }
-    })
+    }, knownFields)
 
     if (ct == 0) None else Option(cumulated)
   }
@@ -49,18 +50,26 @@ class Japan5 extends TestPlus {
     val length = knownFields.length
     def appliesSub(i: Int): Boolean = {
       if (i >= length) true
-      else if (!(knownFields(i) == Unknown || knownFields(i) == fields(i))) false
+      else if (!fieldApplies(knownFields(i))(fields(i))) false
       else appliesSub(i + 1)
     }
     appliesSub(0)
   }
 
-  def kton(blocks: Array[Int], extraEmptySpaces: Int, callback: Fields => Unit) = {
+  def fieldsApply(knownFields: Fields, fields: Fields, fromIndex: Int, untilIndex: Int): Boolean = {
+    if (fromIndex >= untilIndex) true
+    else if (!fieldApplies(knownFields(fromIndex))(fields(fromIndex))) false
+    else fieldsApply(knownFields, fields, fromIndex + 1, untilIndex)
+  }
+  def fieldApplies(knownField: FieldType)(field: FieldType) = (knownField == Unknown || knownField == field)
+
+  def kton(blocks: Array[Int], extraEmptySpaces: Int, callback: Fields => Unit, knownFields: Fields) = {
     val blocksSize = blocks.size
     def ktonSub(callback: Fields => Unit, array: Fields, remainingStep: Int, remainingItems: Int, actualIndex: Int): Unit = {
       if (stopped) {
       } else if (remainingStep == 1) {
         for (i <- actualIndex until actualIndex + remainingItems) array(i) = Empty
+        if (fieldsApply(knownFields, array, actualIndex, actualIndex + remainingItems))
         callback(array)
       } else {
         for (nextSize <- 0 to remainingItems) {
@@ -73,7 +82,8 @@ class Japan5 extends TestPlus {
           for (i <- actualIndex + nextSize until actualIndex + nextSize + actualBlockSize) array(i) = Full
           for (i <- actualIndex + nextSize + actualBlockSize until actualIndex + nextSize + actualBlockSize + emptyAfterBlock) array(i) = Empty
 
-          ktonSub(callback, array, remainingStep - 1, remainingItems - nextSize, actualIndex + nextSize + actualBlockSize + emptyAfterBlock)
+          if (fieldsApply(knownFields, array, actualIndex, actualIndex + nextSize + actualBlockSize + emptyAfterBlock))
+            ktonSub(callback, array, remainingStep - 1, remainingItems - nextSize, actualIndex + nextSize + actualBlockSize + emptyAfterBlock)
         }
       }
     }
