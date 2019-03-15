@@ -202,6 +202,8 @@ object JapanGui extends App {
 
   def colClick(colIdx: Int) = {
     //    print("col" + colIdx + " ")
+    println
+    println(japan.col(colIdx))
     val olds = japan.col(colIdx)
     val japanAlgo = newJapan
     val news = timeout(tms, japanAlgo.reduce(olds.toArray, japan.colBlocks(colIdx).toArray), japanAlgo.cancel).flatten

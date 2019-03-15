@@ -122,5 +122,7 @@ class Japan7 extends TestPlus {
     reduce(Array(E), Array(1)).map(_.toList) ==> None
     reduce(Array(X), Array(1)).map(_.toList) ==> Option(List(X))
     reduce(Array(?), Array(1)).map(_.toList) ==> Option(List(X))
+
+    println(reduce(Array(E, ?, X, X, X, ?, E, E, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, X, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, E, E, E, E), Array(4, 6, 6)).map(_.toList))
   }
 }

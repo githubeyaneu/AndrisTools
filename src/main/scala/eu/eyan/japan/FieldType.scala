@@ -11,6 +11,9 @@ trait FieldType {
   def **(length: Int) = applyA(length)
 }
 
+//case object Full extends FieldType { override def toString() = "◘" }
+//case object Empty extends FieldType { override def toString() = " " }
+//case object Unknown extends FieldType { override def toString() = "X" }
 case object Full extends FieldType { override def toString() = "X" }
-case object Empty extends FieldType { override def toString() = "_" }
-case object Unknown extends FieldType { override def toString() = " " }
+case object Empty extends FieldType { override def toString() = "E" }
+case object Unknown extends FieldType { override def toString() = "?" }
