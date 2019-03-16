@@ -23,6 +23,9 @@ import scala.concurrent.Future
 import java.util.concurrent.TimeoutException
 import eu.eyan.util.java.lang.ThreadPlus
 import eu.eyan.util.rx.lang.scala.subjects.BehaviorSubjectPlus.BehaviorSubjectImplicit
+import scala.collection.mutable.Map
+import scala.collection.mutable.Set
+import scala.annotation.tailrec
 
 object JapanGui extends App {
   val up = """src\main\scala\eu\eyan\japan\fent.txt"""
@@ -66,10 +69,13 @@ object JapanGui extends App {
   val headerFont = new Font(defFont.getName, defFont.getStyle, defFont.getSize - 2)
 
   val panel = new JPanelWithFrameLayout()
-  val cols = japan.width + japan.leftsMax + 1
-  val rows = japan.height + japan.upsMax + 1
-  for (x <- 0 to cols) panel.newColumn("15px")
-  for (x <- 0 to rows) panel.newRow("15px")
+  val cols = japan.width + japan.leftsMax
+  val rows = japan.height + japan.upsMax
+  for (x <- 0 to cols - 1) panel.newColumn("15px")
+  for (x <- 0 to rows - 1) panel.newRow("15px")
+
+  panel.newColumn("40px:g")
+  panel.newRow("40px:g")
 
   for (x <- 0 until japan.width; nums = japan.ups(x); idx <- 0 until nums.size) {
     val col = japan.leftsMax + x + 1
@@ -97,6 +103,27 @@ object JapanGui extends App {
     panel.add(label, CC.xy(col, row))
   }
 
+  //TODO move to somwhere else
+  implicit class LongToFieldType(long: Long) {
+//    @tailrec
+    def factorial(x: Long, acc: Long = 1): Long = if (x <= 1) acc else factorial(x - 1, x * acc)
+    def ! = factorial(long)
+  }
+
+  def binom(n: Long, k: Long): Long = (n.!) / ((k.!) * (n - k).!)
+
+  def combinationsWithRepetition(places: Long, items: Long) = binom(places + items - 1, items)
+
+  implicit class BigIntToFieldType(bigInt: BigInt) {
+//    @tailrec
+    def factorial(x: BigInt, acc: BigInt = 1): BigInt = if (x <= 1) acc else factorial(x - 1, x * acc)
+    def ! = factorial(bigInt)
+  }
+  def binomBi(n: BigInt, k: BigInt): BigInt = (n.!) / ((k.!) * (n - k).!)
+  // binom: n * n-1 * n-2 * ... * n-k+1 / (k * k-1 * k-2 * ... * 1)
+  def combinationsWithRepetitionBi(places: Long, items: Long) = binomBi(places + items - 1, items)
+  //TODO move to somwhere else
+
   for (x <- 0 until japan.width) {
     val col = x + japan.leftsMax + 1
     val row = japan.height + japan.upsMax + 1
@@ -105,8 +132,9 @@ object JapanGui extends App {
       val fulls = list.filter(_ == Full).size
       val empties = list.filter(_ == Empty).size
       val unknowns = list.filter(_ == Unknown).size
-      val hint = japan.height + fulls - colBlocks.sum - colBlocks.size + 1
-      hint
+      val items = japan.height - colBlocks.sum - colBlocks.size + 1
+      val places = colBlocks.size + 1
+      ("" + combinationsWithRepetitionBi(items, places)).length
     })
 
     val label = new JLabel(".")
@@ -124,8 +152,11 @@ object JapanGui extends App {
       val fulls = list.filter(_ == Full).size
       val empties = list.filter(_ == Empty).size
       val unknowns = list.filter(_ == Unknown).size
-      val hint = japan.height + fulls - rowBlocks.sum - rowBlocks.size + 1
-      hint
+      //      japan.height + fulls - rowBlocks.sum - rowBlocks.size + 1
+      val items = japan.width - rowBlocks.sum - rowBlocks.size + 1
+      val places = rowBlocks.size + 1
+      //(combinationsWithRepetition(places, items) + "").length
+      ("" + combinationsWithRepetitionBi(items, places)).length + ", " + (places, items)
     })
 
     val label = new JLabel(".")
@@ -137,55 +168,78 @@ object JapanGui extends App {
 
   new JFrame().withComponent(panel).onCloseExit.packAndSetVisible
 
-  val japanAlgo = new Japan2()
-
   import scala.concurrent._
   import scala.concurrent.duration._
   import ExecutionContext.Implicits.global
-  def timeout[T](ms: Int, action: => T) = {
+  def timeout[T](ms: Int, action: => T, cancelAction: => Unit) = {
+    def now = System.currentTimeMillis
     val threadAction = ThreadPlus.run(action)
-    val threadTimeout = ThreadPlus.run(Thread.sleep(ms))
-    while (threadAction.done$.get[Boolean] == false && threadTimeout.done$.get[Boolean] == false) {}
-    threadAction.stop
-    threadTimeout.stop
-    threadAction.result
-
-    //    val done = thread.done$
-    //    val timer = Observable.timer(ms milliseconds).map(x => false)
-    //    val merged = timer.merge(done)
-    //    val ready = merged.toBlocking.lastOption
-    //    thread.stop
-    //    val res = ready.map(t => thread.result).flatten
-    //    res
-    //    val future = Future(action)
-    //    try {
-    //      Option(Await.result(future, ms milliseconds))
-    //    } catch {
-    //      case e: TimeoutException => {
-    //        print("timeout")
-    //        None
-    //      }
-    //    }
+    val start = now
+    while (!threadAction.done && now < start + ms) Thread.sleep(10)
+    if (threadAction.done) {
+      //      print((now-start)+"ms    ")
+      threadAction.result
+    } else {
+      cancelAction
+      while (!threadAction.done) Thread.sleep(10)
+      None
+    }
   }
 
-  val tms = 500
   def rowClick(rowIdx: Int) = {
-    print("row" + rowIdx + " ")
-    timeout(tms, {
-      japanAlgo.reduce(japan.row(rowIdx), japan.rowBlocks(rowIdx))
-    }).flatten.foreach(reduced => for (x <- 0 until japan.width) japan.update(x, rowIdx, reduced(x)))
-    println(".")
+    //    print("row" + rowIdx + " ")
+    val olds = japan.row(rowIdx)
+    val japanAlgo = new Japan5()
+    val news = timeout(tms, japanAlgo.reduce(olds.toArray, japan.rowBlocks(rowIdx).toArray), japanAlgo.cancel).flatten
+
+    if (news.isEmpty) rowsTimeout.add(rowIdx)
+    else rowsTimeout.remove(rowIdx)
+
+    news.foreach(reduced => for (x <- 0 until japan.width) japan.update(x, rowIdx, reduced(x)))
+    val changed = news.map(news => olds.zip(news).zipWithIndex.filter(p => p._1._1 != p._1._2).map(_._2)).getOrElse(List())
+    print("r" + (if (changed.size > 0) changed.size else ""))
+    changed
   }
 
   def colClick(colIdx: Int) = {
-    print("col" + colIdx + " ")
-    timeout(tms, {
-      japanAlgo.reduce(japan.col(colIdx), japan.colBlocks(colIdx))
-    }).flatten.foreach(reduced => for (y <- 0 until japan.height) japan.update(colIdx, y, reduced(y)))
-    println(".")
+    //    print("col" + colIdx + " ")
+    val olds = japan.col(colIdx)
+    val japanAlgo = new Japan5()
+    val news = timeout(tms, japanAlgo.reduce(olds.toArray, japan.colBlocks(colIdx).toArray), japanAlgo.cancel).flatten
+
+    if (news.isEmpty) colsTimeout.add(colIdx)
+    else colsTimeout.remove(colIdx)
+
+    news.foreach(reduced => for (y <- 0 until japan.height) japan.update(colIdx, y, reduced(y)))
+    val changed = news.map(news => olds.zip(news).zipWithIndex.filter(p => p._1._1 != p._1._2).map(_._2)).getOrElse(List())
+    print("c" + (if (changed.size > 0) changed.size else ""))
+    changed
   }
 
-  for (x <- 0 until japan.width) colClick(x)
-  for (y <- 0 until japan.height) rowClick(y)
+  var tms = 1000
 
+  val rowsTimeout = Set[Int]()
+  (0 until japan.height).foreach(rowsTimeout.add(_))
+  def toRowsToCheck = rowsTimeout.toList.sorted
+
+  val colsTimeout = Set[Int]()
+  (0 until japan.width).foreach(colsTimeout.add(_))
+  def toColsToCheck = colsTimeout.toList.sorted
+
+  startToSolve(toColsToCheck, toRowsToCheck)
+
+  def startToSolve(colsToCheck: Seq[Int], rowsToCheck: Seq[Int]): Unit = {
+    println(tms)
+    println(("c" * colsToCheck.size) + ("r" * rowsToCheck.size))
+    val checkColChangedRows = colsToCheck.map(colClick).flatten.distinct.sorted
+    val checkRowChangedCols = rowsToCheck.map(rowClick).flatten.distinct.sorted
+    println
+    println((checkColChangedRows, checkRowChangedCols))
+    val changed = 0 < checkColChangedRows.size + checkRowChangedCols.size
+    if (changed) startToSolve(checkRowChangedCols, checkColChangedRows)
+    else {
+      tms = tms * 2
+      startToSolve(toColsToCheck, toRowsToCheck)
+    }
+  }
 }

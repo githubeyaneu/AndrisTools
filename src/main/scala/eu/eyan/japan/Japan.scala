@@ -40,10 +40,16 @@ object Japan extends App {
   //val eesk2 = extraEmptySpaceKombinations(70, List(2,2,3,6,2,2,2,6,3,2,2))
   //println(eesk2.size)
 
-  trait FieldType { def value: Int }
-  case object Full extends FieldType { override def toString() = "X"; def value = 1 }
-  case object Empty extends FieldType { override def toString() = "_"; def value = 0 }
-  case object Unknown extends FieldType { override def toString() = "?"; def value = ??? }
+  trait FieldType {
+    def apply(length: Int) = Seq.fill[FieldType](length)(this)
+    def *(length:Int) = apply(length)
+    
+    def applyA(length: Int) = Array.fill[FieldType](length)(this)
+    def **(length:Int) = applyA(length)
+  }
+  case object Full extends FieldType { override def toString() = "X" }
+  case object Empty extends FieldType { override def toString() = "_" }
+  case object Unknown extends FieldType { override def toString() = "_" }
 
   //  val size = 45
   ////  val fulls = List(4, 3, 9, 10, 3)
