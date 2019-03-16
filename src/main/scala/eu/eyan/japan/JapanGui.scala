@@ -9,15 +9,10 @@ import eu.eyan.util.swing.JFramePlus.JFramePlusImplicit
 import java.awt.Font
 import eu.eyan.util.swing.JLabelPlus.JLabelImplicit
 import rx.lang.scala.subjects.BehaviorSubject
-import eu.eyan.japan.Japan.Unknown
-import eu.eyan.japan.Japan.FieldType
 import eu.eyan.util.rx.lang.scala.subjects.BehaviorSubjectPlus
 import eu.eyan.util.rx.lang.scala.subjects.BehaviorSubjectPlus.BehaviorSubjectImplicit
-import eu.eyan.japan.Japan.FieldType
 import rx.lang.scala.Observable
 import eu.eyan.util.rx.lang.scala.ObservablePlus
-import eu.eyan.japan.Japan.Full
-import eu.eyan.japan.Japan.Empty
 import scala.concurrent.Await
 import scala.concurrent.Future
 import java.util.concurrent.TimeoutException
@@ -28,10 +23,12 @@ import scala.collection.mutable.Set
 import scala.annotation.tailrec
 
 object JapanGui extends App {
-  val up = """src\main\scala\eu\eyan\japan\fent.txt"""
-  val left = """src\main\scala\eu\eyan\japan\bal.txt"""
-  val ups = up.linesFromFile.toList.map(_.split("\t").toList.map(_.toInt))
-  val lefts = left.linesFromFile.toList.map(_.split("\t").toList.map(_.toInt))
+  val lines = """src\main\scala\eu\eyan\japan\puzzles\panda.txt""".linesFromFile.map(_.trim).toList
+  val sides = lines.map(_.split("[\t ]").toList.map(_.toInt)).span(!_.contains(888))
+  val lefts = sides._1
+  val ups = sides._2.tail
+  println((lefts.flatten.sum, ups.flatten.sum))
+  assert(lefts.flatten.sum == ups.flatten.sum)
 
   case class JapanTable(lefts: List[List[Int]], ups: List[List[Int]]) {
     lazy val width = ups.size
@@ -186,10 +183,12 @@ object JapanGui extends App {
     }
   }
 
+  def newJapan = new Japan7()
+
   def rowClick(rowIdx: Int) = {
     //    print("row" + rowIdx + " ")
     val olds = japan.row(rowIdx)
-    val japanAlgo = new Japan5()
+    val japanAlgo = newJapan
     val news = timeout(tms, japanAlgo.reduce(olds.toArray, japan.rowBlocks(rowIdx).toArray), japanAlgo.cancel).flatten
 
     if (news.isEmpty) rowsTimeout.add(rowIdx)
@@ -197,14 +196,16 @@ object JapanGui extends App {
 
     news.foreach(reduced => for (x <- 0 until japan.width) japan.update(x, rowIdx, reduced(x)))
     val changed = news.map(news => olds.zip(news).zipWithIndex.filter(p => p._1._1 != p._1._2).map(_._2)).getOrElse(List())
-    print("r" + (if (changed.size > 0) changed.size else ""))
+    print("r" + (if (changed.size > 0) changed.size else if (news.nonEmpty) "." else ""))
     changed
   }
 
   def colClick(colIdx: Int) = {
     //    print("col" + colIdx + " ")
+    println
+    println(japan.col(colIdx))
     val olds = japan.col(colIdx)
-    val japanAlgo = new Japan5()
+    val japanAlgo = newJapan
     val news = timeout(tms, japanAlgo.reduce(olds.toArray, japan.colBlocks(colIdx).toArray), japanAlgo.cancel).flatten
 
     if (news.isEmpty) colsTimeout.add(colIdx)
@@ -212,7 +213,7 @@ object JapanGui extends App {
 
     news.foreach(reduced => for (y <- 0 until japan.height) japan.update(colIdx, y, reduced(y)))
     val changed = news.map(news => olds.zip(news).zipWithIndex.filter(p => p._1._1 != p._1._2).map(_._2)).getOrElse(List())
-    print("c" + (if (changed.size > 0) changed.size else ""))
+    print("c" + (if (changed.size > 0) changed.size else if (news.nonEmpty) "." else ""))
     changed
   }
 
@@ -237,9 +238,14 @@ object JapanGui extends App {
     println((checkColChangedRows, checkRowChangedCols))
     val changed = 0 < checkColChangedRows.size + checkRowChangedCols.size
     if (changed) startToSolve(checkRowChangedCols, checkColChangedRows)
-    else {
+    else if (0 < toColsToCheck.size + toRowsToCheck.size) {
       tms = tms * 2
       startToSolve(toColsToCheck, toRowsToCheck)
+    } else {
+      val unknown = (0 until japan.height).map(japan.row(_)).flatten.count(_ == Unknown)
+      val full = (0 until japan.height).map(japan.row(_)).flatten.count(_ == Full)
+      val empty = (0 until japan.height).map(japan.row(_)).flatten.count(_ == Empty)
+      println("done: full:" + full + ", empty:" + empty + ", unknown: " + unknown)
     }
   }
 }

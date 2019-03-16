@@ -7,6 +7,7 @@ import eu.eyan.util.swing.JPanelWithFrameLayout
 import javax.swing.JLabel
 import com.jgoodies.forms.factories.CC
 
+
 object Japan extends App {
 
   def extraEmptySpaceKombinations(size: Int, tiles: List[Int]) = generate(size - tiles.sum - tiles.size + 1, tiles.size + 1)
@@ -39,17 +40,6 @@ object Japan extends App {
   //println(eesk.mkString("\r\n"))
   //val eesk2 = extraEmptySpaceKombinations(70, List(2,2,3,6,2,2,2,6,3,2,2))
   //println(eesk2.size)
-
-  trait FieldType {
-    def apply(length: Int) = Seq.fill[FieldType](length)(this)
-    def *(length:Int) = apply(length)
-    
-    def applyA(length: Int) = Array.fill[FieldType](length)(this)
-    def **(length:Int) = applyA(length)
-  }
-  case object Full extends FieldType { override def toString() = "X" }
-  case object Empty extends FieldType { override def toString() = "_" }
-  case object Unknown extends FieldType { override def toString() = "_" }
 
   //  val size = 45
   ////  val fulls = List(4, 3, 9, 10, 3)
