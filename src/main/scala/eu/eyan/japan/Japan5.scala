@@ -25,7 +25,7 @@ class Japan5 extends TestPlus {
   private var stopped = false
 
   def reduce(knownFields: Fields, blocks: Array[Int]): Option[Fields] = {
-    val all = JapanGui.combinationsWithRepetitionBi(blocks.size+1, knownFields.size - (if (blocks.size == 0) 0 else (blocks.sum + blocks.size - 1)))
+    val all = Combinations.combinationsWithRepetitionBi(blocks.size+1, knownFields.size - (if (blocks.size == 0) 0 else (blocks.sum + blocks.size - 1)))
     val cumulated = Array.fill[FieldType](knownFields.size)(null)
 
     val st = System.currentTimeMillis

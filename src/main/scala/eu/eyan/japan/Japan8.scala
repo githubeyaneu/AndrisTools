@@ -3,8 +3,11 @@ package eu.eyan.japan
 import org.junit.Test
 import eu.eyan.testutil.TestPlus
 import scala.annotation.tailrec
+import eu.eyan.util.rx.lang.scala.ObservablePlus
+import rx.lang.scala.subjects.BehaviorSubject
+import eu.eyan.util.rx.lang.scala.subjects.BehaviorSubjectPlus.BehaviorSubjectImplicit
 
-object Japan7 extends App {
+object Japan8 extends App {
 
   var ct = 0
   val st = System.currentTimeMillis
@@ -20,7 +23,48 @@ object Japan7 extends App {
   println(ct)
 }
 
-class Japan7 extends TestPlus {
+trait RowOrCol
+case class Col(x: Int) extends RowOrCol
+case class Row(y: Int) extends RowOrCol
+case class ColRow(col:Col, row:Row)
+
+case class JapanTable(lefts: List[List[Int]], ups: List[List[Int]]) {
+  private val cols = (0 until ups.size).map(Col(_))
+  private val rows = (0 until lefts.size).map(Row(_))
+
+  def field$(cr: ColRow) = fieldMap(cr).distinctUntilChanged
+
+  def row(y: Int) = (for (col <- cols) yield fieldMap(ColRow(col, Row(y)))).map(_.get[FieldType]).toList
+  def col(x: Int) = (for (row <- rows) yield fieldMap(ColRow(Col(x), row))).map(_.get[FieldType]).toList
+
+  def rowOrCol$(rowOrCol: RowOrCol) = {
+    
+    
+    ObservablePlus.toList((rowOrCol match {
+      case Col(x) => for (row <- rows) yield fieldMap(ColRow(Col(x), row))
+      case Row(y) => for (col <- cols) yield fieldMap(ColRow(col, Row(y)))
+    }): _*)
+  }
+
+  def blocks(rowOrCol: RowOrCol) = rowOrCol match {
+    case Col(idx) => ups(idx)
+    case Row(idx) => lefts(idx)
+  }
+
+  def update(x: Int, y: Int, newVal: FieldType) = fieldMap(ColRow(Col(x), Row(y))).onNext(newVal)
+
+  private val fieldMap = (for (col <- cols; row <- rows) yield (ColRow(col, row), BehaviorSubject[FieldType](Unknown))).toMap
+}
+
+class Japan8(lefts: List[List[Int]], ups: List[List[Int]]) extends TestPlus {
+  val table = new JapanTable(lefts, ups)
+  def complexity$(rowOrCol: RowOrCol) = table.rowOrCol$(rowOrCol).map(list => {
+    val colBlocks = table.blocks(rowOrCol)
+    val items = list.size - colBlocks.sum - colBlocks.size + 1
+    val places = colBlocks.size + 1
+    ("" + Combinations.combinationsWithRepetitionBi(items, places)).length
+  })
+
   type Fields = Array[FieldType]
   def cancel = cancelled = true
   private var cancelled = false

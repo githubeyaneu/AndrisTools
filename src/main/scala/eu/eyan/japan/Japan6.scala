@@ -25,15 +25,15 @@ class Japan6 extends TestPlus {
   private var stopped = false
 
   def reduce(knownFields: Fields, blocks: Array[Int]): Option[Fields] = {
-      val st = System.currentTimeMillis
-    val all = JapanGui.combinationsWithRepetitionBi(blocks.size + 1, knownFields.size - (if (blocks.size == 0) 0 else (blocks.sum + blocks.size - 1)))
+    val st = System.currentTimeMillis
+    val all = Combinations.combinationsWithRepetitionBi(blocks.size + 1, knownFields.size - (if (blocks.size == 0) 0 else (blocks.sum + blocks.size - 1)))
 
     val cumulated = Array.fill[FieldType](knownFields.size)(null)
 
     var ct = 0
-    kton(blocks, knownFields.size - (if (blocks.size == 0) 0 else (blocks.sum + blocks.size - 1)), next =>  {
+    kton(blocks, knownFields.size - (if (blocks.size == 0) 0 else (blocks.sum + blocks.size - 1)), next => {
       ct = ct + 1
-      if (ct % (10 * 1000 * 1000) == 0) print("_"+/*ct + " " + (System.currentTimeMillis - st) + "ms" + " " +*/ ((all / ct) * (System.currentTimeMillis - st)) / 60000 + "min")
+      if (ct % (10 * 1000 * 1000) == 0) print("_" + /*ct + " " + (System.currentTimeMillis - st) + "ms" + " " +*/ ((all / ct) * (System.currentTimeMillis - st)) / 60000 + "min")
       for (idx <- 0 until cumulated.size) {
         val cumField = cumulated(idx)
         val nextField = next(idx)
@@ -70,7 +70,7 @@ class Japan6 extends TestPlus {
       } else if (remainingStep == 1) {
         for (i <- actualIndex until actualIndex + remainingItems) array(i) = Empty
         if (fieldsApply(knownFields, array, actualIndex, actualIndex + remainingItems))
-        callback(array)
+          callback(array)
       } else {
         for (nextSize <- 0 to remainingItems) {
 
