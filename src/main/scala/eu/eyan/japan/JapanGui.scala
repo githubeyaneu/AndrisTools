@@ -15,6 +15,7 @@ import eu.eyan.util.swing.JPanelWithFrameLayout
 import javax.swing.JFrame
 import javax.swing.JLabel
 import rx.lang.scala.subjects.BehaviorSubject
+import eu.eyan.util.rx.lang.scala.ObservablePlus.ObservableImplicit
 
 object JapanGui extends App {
 
@@ -96,6 +97,7 @@ object JapanGui extends App {
   panel.newColumn("40px:g")
   panel.newRow("40px:g")
 
+  //UPS
   for (x <- 0 until width; nums = table.ups(x); idx <- 0 until nums.size) {
     val col = leftsMax + x + 1
     val row = upsMax - nums.size + idx + 1
@@ -105,6 +107,7 @@ object JapanGui extends App {
     panel.add(label, CC.xy(col, row))
   }
 
+  // LEFTS
   for (y <- 0 until height; nums = table.lefts(y); idx <- 0 until nums.size) {
     val row = upsMax + y + 1
     val col = leftsMax - nums.size + idx + 1
@@ -114,14 +117,7 @@ object JapanGui extends App {
     panel.add(label, CC.xy(col, row))
   }
 
-  for (x <- 0 until width; y <- 0 until height) {
-    val col = x + leftsMax + 1
-    val row = y + upsMax + 1
-    val label = new JLabel(".")
-    label.text(table.field$(ColRow(Col(x), Row(y))).map(_.toString))
-    panel.add(label, CC.xy(col, row))
-  }
-
+  // RIGHT
   for (x <- 0 until width) {
     val col = x + leftsMax + 1
     val row = height + upsMax + 1
@@ -134,6 +130,7 @@ object JapanGui extends App {
     panel.add(label, CC.xy(col, row))
   }
 
+  //BOTTOM
   for (y <- 0 until height) {
     val row = y + upsMax + 1
     val col = width + leftsMax + 1
@@ -145,15 +142,39 @@ object JapanGui extends App {
     label.setFont(headerFont)
     panel.add(label, CC.xy(col, row))
   }
+  
+  // SOLVE
+  val label = new JLabel("s")
+  label.onClicked(startToSolve)
+  panel.add(label, CC.xy(1, 1))
+  
 
-  def reduceRow(y: Int) = ??? //japanAlgo.reduceFields(Int.MaxValue)(Row(y))
+  // FIELDS
+  for (x <- 0 until width; y <- 0 until height) {
+    val col = x + leftsMax + 1
+    val row = y + upsMax + 1
+    val label = new JLabel(".")
+    label.text(table.field$(ColRow(Col(x), Row(y))).map(_.toString))
+    label.onClicked(changeCell(ColRow(Col(x), Row(y))))
+    panel.add(label, CC.xy(col, row))
+  }
+  
+  val algo = new Japan8()
+  
+  def reduceRow(y: Int) = algo.reduceFields(Int.MaxValue)(Row(y))
 
-  def reduceCol(x: Int) = ??? //japanAlgo.reduceFields(Int.MaxValue)(Col(x))
+  def reduceCol(x: Int) = algo.reduceFields(Int.MaxValue)(Col(x))
+  
+  def changeCell(colrow: ColRow) = {
+    val actual = table.field$(colrow).get[FieldType]
+    table.newValue(colrow.col, colrow.row, if(actual==Unknown) Full else if(actual==Full) Empty else Unknown)
+  }
 
   new JFrame()
     .withComponent(panel)
     .onCloseExit
     .packAndSetVisible
 
-  new Japan8().solve(table.lefts, table.ups, table.table, table.newValue)
+    def startToSolve = algo.solve(table.lefts, table.ups, table.table, table.newValue)
+    
 }

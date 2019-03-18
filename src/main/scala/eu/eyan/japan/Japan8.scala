@@ -76,7 +76,7 @@ class Japan8() extends TestPlus {
     println(actualReduceTimeout)
     println("Lines to check: " + linesToCheck.mkString(" "))
 
-    val changedLines = linesToCheck.map(reduceFields(actualReduceTimeout)).flatten.distinct
+    val changedLines = linesToCheck.map(reduceFields(actualReduceTimeout)).flatten.flatten.distinct
     println
     println("Changed lines:" + changedLines.mkString(" "))
     val changed = 0 < changedLines.size
@@ -89,31 +89,34 @@ class Japan8() extends TestPlus {
       val full = table.fieldsAll.count(_ == Full)
       val empty = table.fieldsAll.count(_ == Empty)
       println("done: full:" + full + ", empty:" + empty + ", unknown: " + unknown)
-      println(" "+(System.currentTimeMillis - start)+"ms")
+      println(" " + (System.currentTimeMillis - start) + "ms")
     }
   }
 
-  def reduceFields(timeoutMs: Int)(rowOrCol: RowOrCol): Seq[RowOrCol] = {
+  def reduceFields(timeoutMs: Int)(rowOrCol: RowOrCol): Option[Seq[RowOrCol]] = {
     val olds = table.fields(rowOrCol)
     //TODO gives RowOrCol back instead of int
-    val news = ThreadPlus.runBlockingWithTimeout(timeoutMs, reduce(olds, blocks(rowOrCol).toArray), cancel).flatten
+    val reduceResultTimeout = ThreadPlus.runBlockingWithTimeout(timeoutMs, reduce(olds, blocks(rowOrCol).toArray), cancel)
 
-    if (news.isEmpty) timeouts.add(rowOrCol)
+    if (reduceResultTimeout.isEmpty) timeouts.add(rowOrCol)
     else timeouts.remove(rowOrCol)
 
-    //TODO: make it easier
-    val changed = rowOrCol match {
-      case Col(x) => {
-        news.foreach(reduced => for (row <- table.rows) table.update(Col(x), row, reduced(row.y)))
-        news.map(news => olds.zip(news).zipWithIndex.filter(p => p._1._1 != p._1._2).map(r => Row(r._2))).getOrElse(List())
-      }
-      case Row(y) => {
-        news.foreach(reduced => for (col <- table.cols) table.update(col, Row(y), reduced(col.x)))
-        news.map(news => olds.zip(news).zipWithIndex.filter(p => p._1._1 != p._1._2).map(c => Col(c._2))).getOrElse(List())
-      }
-    }
+    val changed = reduceResultTimeout.map(reduceResult => {
 
-    print(rowOrCol + " " + (if (changed.size > 0) changed.size else if (news.nonEmpty) "." else ""))
+      //TODO: make it easier
+      rowOrCol match {
+        case Col(x) => {
+          reduceResult.foreach(reduced => for (row <- table.rows) table.update(Col(x), row, reduced(row.y)))
+          reduceResult.map(news => olds.zip(news).zipWithIndex.filter(p => p._1._1 != p._1._2).map(r => Row(r._2))).getOrElse(List())
+        }
+        case Row(y) => {
+          reduceResult.foreach(reduced => for (col <- table.cols) table.update(col, Row(y), reduced(col.x)))
+          reduceResult.map(news => olds.zip(news).zipWithIndex.filter(p => p._1._1 != p._1._2).map(c => Col(c._2))).getOrElse(List())
+        }
+      }
+    })
+
+    print(rowOrCol + " " + (if (changed.size > 0) changed.size else if (reduceResultTimeout.nonEmpty) "." else ""))
     changed
   }
 
