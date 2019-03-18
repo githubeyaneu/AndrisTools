@@ -6,6 +6,14 @@ import scala.annotation.tailrec
 import eu.eyan.util.rx.lang.scala.ObservablePlus
 import rx.lang.scala.subjects.BehaviorSubject
 import eu.eyan.util.rx.lang.scala.subjects.BehaviorSubjectPlus.BehaviorSubjectImplicit
+import eu.eyan.japan.JapanGui.JapanGuiTable
+import eu.eyan.japan.JapanGui.RowOrCol
+import eu.eyan.japan.JapanGui.Col
+import eu.eyan.japan.JapanGui.Row
+import eu.eyan.util.java.lang.ThreadPlus
+import eu.eyan.japan.Japan.Fields
+import eu.eyan.japan.Japan.Blocks
+import eu.eyan.util.time.TimeCounter
 
 object Japan8 extends App {
 
@@ -21,51 +29,116 @@ object Japan8 extends App {
 
   kton.reduce(Array.fill[FieldType](70)(Unknown), Array(2, 2, 3, 6, 2, 2, 2, 6, 3, 2, 2))
   println(ct)
+
 }
 
-trait RowOrCol
-case class Col(x: Int) extends RowOrCol
-case class Row(y: Int) extends RowOrCol
-case class ColRow(col:Col, row:Row)
+case class Table(private val table: Array[Array[FieldType]], guiSetField: (Col, Row, FieldType) => Unit) {
+  val cols = (0 until table.size).map(Col(_))
+  val rows = (0 until table(0).size).map(Row(_))
 
-case class JapanTable(lefts: List[List[Int]], ups: List[List[Int]]) {
-  private val cols = (0 until ups.size).map(Col(_))
-  private val rows = (0 until lefts.size).map(Row(_))
+  def fields(rowOrCol: RowOrCol) = rowOrCol match {
+    case Col(idx) => col(idx)
+    case Row(idx) => row(idx)
+  }
+  def fieldsAll = rows.map(fields).flatten // FIXME dont use rows
 
-  def field$(cr: ColRow) = fieldMap(cr).distinctUntilChanged
+  def update(col: Col, row: Row, newVal: FieldType) = {
+    table(col.x)(row.y) = newVal
 
-  def row(y: Int) = (for (col <- cols) yield fieldMap(ColRow(col, Row(y)))).map(_.get[FieldType]).toList
-  def col(x: Int) = (for (row <- rows) yield fieldMap(ColRow(Col(x), row))).map(_.get[FieldType]).toList
-
-  def rowOrCol$(rowOrCol: RowOrCol) = {
-    
-    
-    ObservablePlus.toList((rowOrCol match {
-      case Col(x) => for (row <- rows) yield fieldMap(ColRow(Col(x), row))
-      case Row(y) => for (col <- cols) yield fieldMap(ColRow(col, Row(y)))
-    }): _*)
+    guiSetField(col, row, newVal)
   }
 
-  def blocks(rowOrCol: RowOrCol) = rowOrCol match {
-    case Col(idx) => ups(idx)
-    case Row(idx) => lefts(idx)
-  }
-
-  def update(x: Int, y: Int, newVal: FieldType) = fieldMap(ColRow(Col(x), Row(y))).onNext(newVal)
-
-  private val fieldMap = (for (col <- cols; row <- rows) yield (ColRow(col, row), BehaviorSubject[FieldType](Unknown))).toMap
+  private def row(y: Int) = (for (col <- cols) yield table(col.x)(y))
+  private def col(x: Int) = (for (row <- rows) yield table(x)(row.y))
 }
 
-class Japan8(lefts: List[List[Int]], ups: List[List[Int]]) extends TestPlus {
-  val table = new JapanTable(lefts, ups)
-  def complexity$(rowOrCol: RowOrCol) = table.rowOrCol$(rowOrCol).map(list => {
-    val colBlocks = table.blocks(rowOrCol)
-    val items = list.size - colBlocks.sum - colBlocks.size + 1
-    val places = colBlocks.size + 1
-    ("" + Combinations.combinationsWithRepetitionBi(items, places)).length
-  })
+class Japan8() extends TestPlus {
+  def solve(lefts: List[Blocks], ups: List[Blocks], table: Array[Array[FieldType]], guiSetField: (Col, Row, FieldType) => Unit): Unit = {
+    this.lefts = lefts
+    this.ups = ups
+    this.table = new Table(table, guiSetField)
+    timeouts = scala.collection.mutable.Set[RowOrCol]((this.table.rows ++ this.table.cols): _*)
+    actualReduceTimeout = 10
+    start = System.currentTimeMillis
+    startToSolve(toCheckTimeouted)
+  }
 
-  type Fields = Array[FieldType]
+  private var lefts: List[Blocks] = _
+  private var ups: List[Blocks] = _
+  private var table: Table = _
+  private var timeouts: scala.collection.mutable.Set[RowOrCol] = scala.collection.mutable.Set[RowOrCol]()
+  private def toCheckTimeouted = timeouts.toList.sorted(sorter)
+  private var actualReduceTimeout = 1000
+  private var start = System.currentTimeMillis
+
+  def startToSolve(linesToCheck: Seq[RowOrCol]): Unit = {
+    println("---")
+    println(actualReduceTimeout)
+    println("Lines to check: " + linesToCheck.mkString(" "))
+
+    val changedLines = linesToCheck.map(reduceFields(actualReduceTimeout)).flatten.distinct
+    println
+    println("Changed lines:" + changedLines.mkString(" "))
+    val changed = 0 < changedLines.size
+    if (changed) startToSolve(changedLines)
+    else if (0 < toCheckTimeouted.size) {
+      actualReduceTimeout = actualReduceTimeout * 2
+      startToSolve(toCheckTimeouted)
+    } else {
+      val unknown = table.fieldsAll.count(_ == Unknown)
+      val full = table.fieldsAll.count(_ == Full)
+      val empty = table.fieldsAll.count(_ == Empty)
+      println("done: full:" + full + ", empty:" + empty + ", unknown: " + unknown)
+      println(" "+(System.currentTimeMillis - start)+"ms")
+    }
+  }
+
+  def reduceFields(timeoutMs: Int)(rowOrCol: RowOrCol): Seq[RowOrCol] = {
+    val olds = table.fields(rowOrCol)
+    //TODO gives RowOrCol back instead of int
+    val news = ThreadPlus.runBlockingWithTimeout(timeoutMs, reduce(olds, blocks(rowOrCol).toArray), cancel).flatten
+
+    if (news.isEmpty) timeouts.add(rowOrCol)
+    else timeouts.remove(rowOrCol)
+
+    //TODO: make it easier
+    val changed = rowOrCol match {
+      case Col(x) => {
+        news.foreach(reduced => for (row <- table.rows) table.update(Col(x), row, reduced(row.y)))
+        news.map(news => olds.zip(news).zipWithIndex.filter(p => p._1._1 != p._1._2).map(r => Row(r._2))).getOrElse(List())
+      }
+      case Row(y) => {
+        news.foreach(reduced => for (col <- table.cols) table.update(col, Row(y), reduced(col.x)))
+        news.map(news => olds.zip(news).zipWithIndex.filter(p => p._1._1 != p._1._2).map(c => Col(c._2))).getOrElse(List())
+      }
+    }
+
+    print(rowOrCol + " " + (if (changed.size > 0) changed.size else if (news.nonEmpty) "." else ""))
+    changed
+  }
+
+  //TODO duplicate
+  def complexity(rowOrCol: RowOrCol) = {
+    val blocks = this.blocks(rowOrCol)
+    val blocksSize = blocks.size
+    val places = blocksSize + 1
+
+    val fieldsLength = table.fields(rowOrCol).size
+    val blocksSum = blocks.sum
+    val blocksAndKnownEmptySpaces = if (blocksSize == 0) 0 else blocksSum + blocksSize - 1
+    val extraEmptySpaces = fieldsLength - blocksAndKnownEmptySpaces
+
+    Combinations.combinationsWithRepetitionBi(places, extraEmptySpaces)
+  }
+
+  def sorter: Ordering[RowOrCol] = (x: RowOrCol, y: RowOrCol) => {
+    val xc = complexity(x)
+    val yc = complexity(y)
+    if (xc == yc) 0
+    else if (xc < yc) -1
+    else 1
+  }
+
   def cancel = cancelled = true
   private var cancelled = false
 
@@ -126,6 +199,11 @@ class Japan8(lefts: List[List[Int]], ups: List[List[Int]]) extends TestPlus {
     generatePossibleFields(reducePossibleFieldsCallback)
 
     if (possibleFieldsCounter == 0) None else Option(cumulated)
+  }
+
+  def blocks(rowOrCol: RowOrCol): Blocks = rowOrCol match {
+    case Col(idx) => ups(idx)
+    case Row(idx) => lefts(idx)
   }
 
   val ? = Unknown

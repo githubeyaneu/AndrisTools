@@ -1,9 +1,11 @@
 package eu.eyan.japan
 
 
-trait FieldType {
+object Japan {
   type Fields = Seq[FieldType]
-  
+  type Blocks = List[Int]
+}
+trait FieldType {
   def apply(length: Int) = Seq.fill[FieldType](length)(this)
   def *(length: Int) = apply(length)
 

@@ -8,7 +8,7 @@ import javax.swing.JLabel
 import com.jgoodies.forms.factories.CC
 
 
-object Japan extends App {
+object JapanApp extends App {
 
   def extraEmptySpaceKombinations(size: Int, tiles: List[Int]) = generate(size - tiles.sum - tiles.size + 1, tiles.size + 1)
   def generate(items: Int, remainingPlaces: Int): Seq[List[Int]] = {

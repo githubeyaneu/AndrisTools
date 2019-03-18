@@ -1,48 +1,94 @@
 package eu.eyan.japan
 
+import java.awt.Font
+
+import com.jgoodies.forms.factories.CC
+
+import eu.eyan.japan.Japan.Blocks
+import eu.eyan.japan.Japan.Fields
+import eu.eyan.util.rx.lang.scala.ObservablePlus
+import eu.eyan.util.rx.lang.scala.subjects.BehaviorSubjectPlus.BehaviorSubjectImplicit
+import eu.eyan.util.string.StringPlus.StringPlusImplicit
+import eu.eyan.util.swing.JFramePlus.JFramePlusImplicit
+import eu.eyan.util.swing.JLabelPlus.JLabelImplicit
 import eu.eyan.util.swing.JPanelWithFrameLayout
 import javax.swing.JFrame
 import javax.swing.JLabel
-import com.jgoodies.forms.factories.CC
-import eu.eyan.util.string.StringPlus.StringPlusImplicit
-import eu.eyan.util.swing.JFramePlus.JFramePlusImplicit
-import java.awt.Font
-import eu.eyan.util.swing.JLabelPlus.JLabelImplicit
 import rx.lang.scala.subjects.BehaviorSubject
-import eu.eyan.util.rx.lang.scala.subjects.BehaviorSubjectPlus
-import eu.eyan.util.rx.lang.scala.subjects.BehaviorSubjectPlus.BehaviorSubjectImplicit
-import rx.lang.scala.Observable
-import eu.eyan.util.rx.lang.scala.ObservablePlus
-import scala.concurrent.Await
-import scala.concurrent.Future
-import java.util.concurrent.TimeoutException
-import eu.eyan.util.java.lang.ThreadPlus
-import eu.eyan.util.rx.lang.scala.subjects.BehaviorSubjectPlus.BehaviorSubjectImplicit
-import scala.collection.mutable.Map
-import scala.collection.mutable.Set
-import scala.annotation.tailrec
 
 object JapanGui extends App {
-  val lines = """src\main\scala\eu\eyan\japan\puzzles\panda.txt""".linesFromFile.map(_.trim).toList
-  val sides = lines.map(_.split("[\t ]").toList.map(_.toInt)).span(!_.contains(888))
-  val lefts = sides._1
-  val ups = sides._2.tail
-  println((lefts.flatten.sum, ups.flatten.sum))
-  assert(lefts.flatten.sum == ups.flatten.sum)
 
-  val width = ups.size
-  val height = lefts.size
-  lazy val upsMax = ups.map(_.size).max
-  lazy val leftsMax = lefts.map(_.size).max
+  val file = "panda.txt"
+  val dir = """src\main\scala\eu\eyan\japan\puzzles\"""
+  val table = createTableFromFile(dir + file)
 
-  val japanAlgo = new Japan8(lefts, ups)
-  val table = japanAlgo.table
+  def createTableFromFile(file: String) = {
+    val lines = file.linesFromFile.map(_.trim).toList
+    val sides = lines.map(_.split("[\t ]").toList.map(_.toInt)).span(!_.contains(888))
+    val lefts = sides._1
+    val ups = sides._2.tail
+    println((lefts.flatten.sum, ups.flatten.sum))
+    assert(lefts.flatten.sum == ups.flatten.sum)
+
+    new JapanGuiTable(lefts, ups)
+  }
+
+  trait RowOrCol
+  case class Col(x: Int) extends RowOrCol { override def toString = "c" + x }
+  case class Row(y: Int) extends RowOrCol { override def toString = "r" + y }
+  case class ColRow(col: Col, row: Row)
+
+  case class JapanGuiTable(lefts: List[Blocks], ups: List[Blocks]) {
+    val width = ups.size
+    val height = lefts.size
+    lazy val upsMax = ups.map(_.size).max
+    lazy val leftsMax = lefts.map(_.size).max
+
+    def newValue(col: Col, row: Row, newVal: FieldType) = fieldMap(ColRow(col, row)).onNext(newVal)
+    def field$(cr: ColRow) = fieldMap(cr).distinctUntilChanged
+    def complexity$(rowOrCol: RowOrCol) = rowOrCol$(rowOrCol).map(fieldsComplexity(rowOrCol))
+
+    private def fieldsComplexity(rowOrCol: RowOrCol)(list: Fields) = {
+
+      val items = list.size - blocks(rowOrCol).sum - blocks(rowOrCol).size + 1
+      val places = blocks(rowOrCol).size + 1
+      ("" + Combinations.combinationsWithRepetitionBi(items, places)).length
+    }
+
+    def table = {
+      val array = Array.ofDim[FieldType](cols.size, rows.size)
+      for (col <- cols; row <- rows) array(col.x)(row.y) = fieldMap(ColRow(col, row)).get
+      array
+    }
+
+    private val cols = (0 until ups.size).map(Col(_))
+    private val rows = (0 until lefts.size).map(Row(_))
+
+    private def blocks(rowOrCol: RowOrCol): Blocks = rowOrCol match {
+      case Col(idx) => ups(idx)
+      case Row(idx) => lefts(idx)
+    }
+
+    private def fields$(rowOrCol: RowOrCol) = rowOrCol match {
+      case Col(x) => for (row <- rows) yield fieldMap(ColRow(Col(x), row))
+      case Row(y) => for (col <- cols) yield fieldMap(ColRow(col, Row(y)))
+    }
+
+    private def rowOrCol$(rowOrCol: RowOrCol) = ObservablePlus.toSeq(fields$(rowOrCol))
+
+    private val fieldMap = (for (col <- cols; row <- rows) yield (ColRow(col, row), BehaviorSubject[FieldType](Unknown))).toMap
+  }
+
+  val width = table.width
+  val height = table.height
+  lazy val upsMax = table.upsMax
+  lazy val leftsMax = table.leftsMax
 
   val defFont = new JLabel().getFont()
   val headerFont = new Font(defFont.getName, defFont.getStyle, defFont.getSize - 2)
 
   val panel = new JPanelWithFrameLayout()
-  val cols = width + leftsMax
+  val cols = table.width + table.leftsMax
   val rows = height + upsMax
   for (x <- 0 to cols - 1) panel.newColumn("15px")
   for (x <- 0 to rows - 1) panel.newRow("15px")
@@ -50,21 +96,21 @@ object JapanGui extends App {
   panel.newColumn("40px:g")
   panel.newRow("40px:g")
 
-  for (x <- 0 until width; nums = ups(x); idx <- 0 until nums.size) {
+  for (x <- 0 until width; nums = table.ups(x); idx <- 0 until nums.size) {
     val col = leftsMax + x + 1
     val row = upsMax - nums.size + idx + 1
     val label = new JLabel("" + nums(idx))
     label.setFont(headerFont)
-    label.onClicked(colClick(x))
+    label.onClicked(reduceCol(x))
     panel.add(label, CC.xy(col, row))
   }
 
-  for (y <- 0 until height; nums = lefts(y); idx <- 0 until nums.size) {
+  for (y <- 0 until height; nums = table.lefts(y); idx <- 0 until nums.size) {
     val row = upsMax + y + 1
     val col = leftsMax - nums.size + idx + 1
     val label = new JLabel("" + nums(idx))
     label.setFont(headerFont)
-    label.onClicked(rowClick(y))
+    label.onClicked(reduceRow(y))
     panel.add(label, CC.xy(col, row))
   }
 
@@ -79,11 +125,11 @@ object JapanGui extends App {
   for (x <- 0 until width) {
     val col = x + leftsMax + 1
     val row = height + upsMax + 1
-    val colHint$ = japanAlgo.complexity$(Col(x))
+    val colHint$ = table.complexity$(Col(x))
 
     val label = new JLabel(".")
     label.text(colHint$.map(_.toString))
-    label.onClicked(colClick(x))
+    label.onClicked(reduceCol(x))
     label.setFont(headerFont)
     panel.add(label, CC.xy(col, row))
   }
@@ -91,83 +137,23 @@ object JapanGui extends App {
   for (y <- 0 until height) {
     val row = y + upsMax + 1
     val col = width + leftsMax + 1
-    val rowHint$ = japanAlgo.complexity$(Row(y))
+    val rowHint$ = table.complexity$(Row(y))
 
     val label = new JLabel(".")
     label.text(rowHint$.map(_.toString))
-    label.onClicked(rowClick(y))
+    label.onClicked(reduceRow(y))
     label.setFont(headerFont)
     panel.add(label, CC.xy(col, row))
   }
 
-  new JFrame().withComponent(panel).onCloseExit.packAndSetVisible
+  def reduceRow(y: Int) = ??? //japanAlgo.reduceFields(Int.MaxValue)(Row(y))
 
-  var actualReduceTimeout = 1000
+  def reduceCol(x: Int) = ??? //japanAlgo.reduceFields(Int.MaxValue)(Col(x))
 
-  def rowClick(rowIdx: Int) = {
-    //    print("row" + rowIdx + " ")
-    //    println
-    //    println(japan.row(rowIdx))
-    val olds = table.row(rowIdx)
-    val news = ThreadPlus.runBlockingWithTimeout(actualReduceTimeout, japanAlgo.reduce(olds.toArray, table.blocks(Row(rowIdx)).toArray), japanAlgo.cancel).flatten
+  new JFrame()
+    .withComponent(panel)
+    .onCloseExit
+    .packAndSetVisible
 
-    if (news.isEmpty) rowsTimeout.add(rowIdx)
-    else rowsTimeout.remove(rowIdx)
-
-    news.foreach(reduced => for (x <- 0 until width) table.update(x, rowIdx, reduced(x)))
-    val changed = news.map(news => olds.zip(news).zipWithIndex.filter(p => p._1._1 != p._1._2).map(_._2)).getOrElse(List())
-    print("r" + (if (changed.size > 0) changed.size else if (news.nonEmpty) "." else ""))
-    changed
-  }
-
-  def colClick(colIdx: Int) = {
-    //    print("col" + colIdx + " ")
-    //    println
-    //    println(japan.col(colIdx))
-    reduceCol(colIdx)
-  }
-
-  def reduceCol(x: Int) = {
-    val olds = table.col(x)
-    val news = ThreadPlus.runBlockingWithTimeout(actualReduceTimeout, japanAlgo.reduce(olds.toArray, table.blocks(Col(x)).toArray), japanAlgo.cancel).flatten
-
-    if (news.isEmpty) colsTimeout.add(x)
-    else colsTimeout.remove(x)
-
-    news.foreach(reduced => for (y <- 0 until height) table.update(x, y, reduced(y)))
-    val changed = news.map(news => olds.zip(news).zipWithIndex.filter(p => p._1._1 != p._1._2).map(_._2)).getOrElse(List())
-    print("c" + (if (changed.size > 0) changed.size else if (news.nonEmpty) "." else ""))
-    changed
-  }
-
-  val rowsTimeout = Set[Int]()
-  (0 until height).foreach(rowsTimeout.add(_))
-  def toRowsToCheck = rowsTimeout.toList.sorted
-
-  val colsTimeout = Set[Int]()
-  (0 until width).foreach(colsTimeout.add(_))
-  def toColsToCheck = colsTimeout.toList.sorted
-
-  startToSolve(toColsToCheck, toRowsToCheck)
-
-  def startToSolve(colsToCheck: Seq[Int], rowsToCheck: Seq[Int]): Unit = {
-    println(actualReduceTimeout)
-    println(("c" * colsToCheck.size) + ("r" * rowsToCheck.size))
-
-    val checkColChangedRows = colsToCheck.map(colClick).flatten.distinct.sorted
-    val checkRowChangedCols = rowsToCheck.map(rowClick).flatten.distinct.sorted
-    println
-    println((checkColChangedRows, checkRowChangedCols))
-    val changed = 0 < checkColChangedRows.size + checkRowChangedCols.size
-    if (changed) startToSolve(checkRowChangedCols, checkColChangedRows)
-    else if (0 < toColsToCheck.size + toRowsToCheck.size) {
-      actualReduceTimeout = actualReduceTimeout * 2
-      startToSolve(toColsToCheck, toRowsToCheck)
-    } else {
-      val unknown = (0 until height).map(table.row(_)).flatten.count(_ == Unknown)
-      val full = (0 until height).map(table.row(_)).flatten.count(_ == Full)
-      val empty = (0 until height).map(table.row(_)).flatten.count(_ == Empty)
-      println("done: full:" + full + ", empty:" + empty + ", unknown: " + unknown)
-    }
-  }
+  new Japan8().solve(table.lefts, table.ups, table.table, table.newValue)
 }
