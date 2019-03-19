@@ -7,13 +7,12 @@ import eu.eyan.util.rx.lang.scala.ObservablePlus
 import rx.lang.scala.subjects.BehaviorSubject
 import eu.eyan.util.rx.lang.scala.subjects.BehaviorSubjectPlus.BehaviorSubjectImplicit
 import eu.eyan.japan.JapanGui.JapanGuiTable
-import eu.eyan.japan.JapanGui.RowOrCol
-import eu.eyan.japan.JapanGui.Col
-import eu.eyan.japan.JapanGui.Row
 import eu.eyan.util.java.lang.ThreadPlus
 import eu.eyan.japan.Japan.Fields
 import eu.eyan.japan.Japan.Blocks
 import eu.eyan.util.time.TimeCounter
+import eu.eyan.japan.Japan.Lines
+import eu.eyan.japan.Japan.Lines
 
 object Japan8 extends App {
 
@@ -29,7 +28,6 @@ object Japan8 extends App {
 
   kton.reduce(Array.fill[FieldType](70)(Unknown), Array(2, 2, 3, 6, 2, 2, 2, 6, 3, 2, 2))
   println(ct)
-
 }
 
 case class Table(private val table: Array[Array[FieldType]], guiSetField: (Col, Row, FieldType) => Unit) {
@@ -52,71 +50,82 @@ case class Table(private val table: Array[Array[FieldType]], guiSetField: (Col, 
   private def col(x: Int) = (for (row <- rows) yield table(x)(row.y))
 }
 
-class Japan8() extends TestPlus {
-  def solve(lefts: List[Blocks], ups: List[Blocks], table: Array[Array[FieldType]], guiSetField: (Col, Row, FieldType) => Unit): Unit = {
-    this.lefts = lefts
-    this.ups = ups
+class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, FieldType) => Unit) extends TestPlus {
+  def solve(table: Array[Array[FieldType]]): Unit = {
     this.table = new Table(table, guiSetField)
     timeouts = scala.collection.mutable.Set[RowOrCol]((this.table.rows ++ this.table.cols): _*)
     actualReduceTimeout = 10
     start = System.currentTimeMillis
-    startToSolve(toCheckTimeouted)
+    reduceLines(toCheckTimeouted)
   }
 
-  private var lefts: List[Blocks] = _
-  private var ups: List[Blocks] = _
   private var table: Table = _
+  private var actualReduceTimeout = 1000
+  private var start = 0L
+
   private var timeouts: scala.collection.mutable.Set[RowOrCol] = scala.collection.mutable.Set[RowOrCol]()
   private def toCheckTimeouted = timeouts.toList.sorted(sorter)
-  private var actualReduceTimeout = 1000
-  private var start = System.currentTimeMillis
 
-  def startToSolve(linesToCheck: Seq[RowOrCol]): Unit = {
+  def reduceLines(linesToCheck: Lines): Unit = {
     println("---")
     println(actualReduceTimeout)
     println("Lines to check: " + linesToCheck.mkString(" "))
 
-    val changedLines = linesToCheck.map(reduceFields(actualReduceTimeout)).flatten.flatten.distinct
-    println
-    println("Changed lines:" + changedLines.mkString(" "))
-    val changed = 0 < changedLines.size
-    if (changed) startToSolve(changedLines)
-    else if (0 < toCheckTimeouted.size) {
-      actualReduceTimeout = actualReduceTimeout * 2
-      startToSolve(toCheckTimeouted)
+    val reduceResultsOptions = linesToCheck.map(reduceFields(actualReduceTimeout))
+    val error = reduceResultsOptions.exists(_.isEmpty)
+    if (error) {
+      val errorLines = linesToCheck.zip(reduceResultsOptions).filter(_._2.isEmpty).map(_._1)
+      println("Error: line(s) could not be reduced: " + errorLines.mkString(", "))
     } else {
-      val unknown = table.fieldsAll.count(_ == Unknown)
-      val full = table.fieldsAll.count(_ == Full)
-      val empty = table.fieldsAll.count(_ == Empty)
-      println("done: full:" + full + ", empty:" + empty + ", unknown: " + unknown)
-      println(" " + (System.currentTimeMillis - start) + "ms")
+      val reduceResults = reduceResultsOptions.flatten
+      val changedLines = reduceResults.flatten.distinct
+      println
+      println("Changed lines:" + changedLines.mkString(" "))
+      val changed = 0 < changedLines.size
+      if (changed) reduceLines(changedLines)
+      else if (0 < toCheckTimeouted.size) {
+        actualReduceTimeout = actualReduceTimeout * 2
+        reduceLines(toCheckTimeouted)
+      } else {
+        val unknown = table.fieldsAll.count(_ == Unknown)
+        val full = table.fieldsAll.count(_ == Full)
+        val empty = table.fieldsAll.count(_ == Empty)
+        println("done: full:" + full + ", empty:" + empty + ", unknown: " + unknown)
+        println(" " + (System.currentTimeMillis - start) + "ms")
+      }
     }
   }
 
-  def reduceFields(timeoutMs: Int)(rowOrCol: RowOrCol): Option[Seq[RowOrCol]] = {
+  def reduceFields(timeoutMs: Int)(rowOrCol: RowOrCol): Option[Lines] = {
     val olds = table.fields(rowOrCol)
     //TODO gives RowOrCol back instead of int
     val reduceResultTimeout = ThreadPlus.runBlockingWithTimeout(timeoutMs, reduce(olds, blocks(rowOrCol).toArray), cancel)
 
-    if (reduceResultTimeout.isEmpty) timeouts.add(rowOrCol)
-    else timeouts.remove(rowOrCol)
-
-    val changed = reduceResultTimeout.map(reduceResult => {
-
-      //TODO: make it easier
-      rowOrCol match {
-        case Col(x) => {
-          reduceResult.foreach(reduced => for (row <- table.rows) table.update(Col(x), row, reduced(row.y)))
-          reduceResult.map(news => olds.zip(news).zipWithIndex.filter(p => p._1._1 != p._1._2).map(r => Row(r._2))).getOrElse(List())
+    val changed = if (reduceResultTimeout.isEmpty) {
+      timeouts.add(rowOrCol)
+      Option(Seq()) // no changed row or col
+    } else {
+      timeouts.remove(rowOrCol)
+      val reduceResult = reduceResultTimeout.get
+      if (reduceResult.isEmpty) None // this indicates that there is an error with the table, cannot reduced properly
+      else {
+        val reducedFields = reduceResult.get
+        val changedFields = olds.zip(reducedFields).zipWithIndex.filter(p => p._1._1 != p._1._2)
+        val changedRowsOrCols: Lines = rowOrCol match {
+          case Col(x) => {
+            for (row <- table.rows) table.update(Col(x), row, reducedFields(row.y))
+            changedFields.map(r => Row(r._2))
+          }
+          case Row(y) => {
+            for (col <- table.cols) table.update(col, Row(y), reducedFields(col.x))
+            changedFields.map(c => Col(c._2))
+          }
         }
-        case Row(y) => {
-          reduceResult.foreach(reduced => for (col <- table.cols) table.update(col, Row(y), reduced(col.x)))
-          reduceResult.map(news => olds.zip(news).zipWithIndex.filter(p => p._1._1 != p._1._2).map(c => Col(c._2))).getOrElse(List())
-        }
+        Option(changedRowsOrCols)
       }
-    })
+    }
 
-    print(rowOrCol + " " + (if (changed.size > 0) changed.size else if (reduceResultTimeout.nonEmpty) "." else ""))
+    //print(rowOrCol + " " + (if (changed.size > 0) changed.size else if (reduceResultTimeout.nonEmpty) "." else ""))
     changed
   }
 

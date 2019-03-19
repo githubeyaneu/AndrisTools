@@ -1,10 +1,15 @@
 package eu.eyan.japan
 
-
 object Japan {
   type Fields = Seq[FieldType]
   type Blocks = List[Int]
+  type Lines = Seq[RowOrCol]
 }
+trait RowOrCol
+case class Col(x: Int) extends RowOrCol { override def toString = "c" + x }
+case class Row(y: Int) extends RowOrCol { override def toString = "r" + y }
+case class ColRow(col: Col, row: Row)
+
 trait FieldType {
   def apply(length: Int) = Seq.fill[FieldType](length)(this)
   def *(length: Int) = apply(length)

@@ -16,6 +16,8 @@ import javax.swing.JFrame
 import javax.swing.JLabel
 import rx.lang.scala.subjects.BehaviorSubject
 import eu.eyan.util.rx.lang.scala.ObservablePlus.ObservableImplicit
+import eu.eyan.util.swing.SwingPlus
+import eu.eyan.util.java.lang.ThreadPlus
 
 object JapanGui extends App {
 
@@ -34,11 +36,6 @@ object JapanGui extends App {
     new JapanGuiTable(lefts, ups)
   }
 
-  trait RowOrCol
-  case class Col(x: Int) extends RowOrCol { override def toString = "c" + x }
-  case class Row(y: Int) extends RowOrCol { override def toString = "r" + y }
-  case class ColRow(col: Col, row: Row)
-
   case class JapanGuiTable(lefts: List[Blocks], ups: List[Blocks]) {
     val width = ups.size
     val height = lefts.size
@@ -48,6 +45,7 @@ object JapanGui extends App {
     def newValue(col: Col, row: Row, newVal: FieldType) = fieldMap(ColRow(col, row)).onNext(newVal)
     def field$(cr: ColRow) = fieldMap(cr).distinctUntilChanged
     def complexity$(rowOrCol: RowOrCol) = rowOrCol$(rowOrCol).map(fieldsComplexity(rowOrCol))
+    def reset =  for (col <- cols; row <- rows) fieldMap(ColRow(col, row)).onNext(Unknown)
 
     private def fieldsComplexity(rowOrCol: RowOrCol)(list: Fields) = {
 
@@ -78,6 +76,7 @@ object JapanGui extends App {
     private def rowOrCol$(rowOrCol: RowOrCol) = ObservablePlus.toSeq(fields$(rowOrCol))
 
     private val fieldMap = (for (col <- cols; row <- rows) yield (ColRow(col, row), BehaviorSubject[FieldType](Unknown))).toMap
+
   }
 
   val width = table.width
@@ -144,9 +143,14 @@ object JapanGui extends App {
   }
   
   // SOLVE
-  val label = new JLabel("s")
-  label.onClicked(startToSolve)
-  panel.add(label, CC.xy(1, 1))
+  val labelSolve = new JLabel("s")
+  labelSolve.onClicked(startToSolve)
+  panel.add(labelSolve, CC.xy(1, 1))
+  
+  // RESET
+  val resetLabel = new JLabel("r")
+  resetLabel.onClicked(reset)
+  panel.add(resetLabel, CC.xy(3, 1))
   
 
   // FIELDS
@@ -159,7 +163,7 @@ object JapanGui extends App {
     panel.add(label, CC.xy(col, row))
   }
   
-  val algo = new Japan8()
+  val algo = new Japan8(table.lefts, table.ups, table.newValue)
   
   def reduceRow(y: Int) = algo.reduceFields(Int.MaxValue)(Row(y))
 
@@ -175,6 +179,8 @@ object JapanGui extends App {
     .onCloseExit
     .packAndSetVisible
 
-    def startToSolve = algo.solve(table.lefts, table.ups, table.table, table.newValue)
+  def startToSolve = ThreadPlus.run( algo.solve(table.table) )
+
+  def reset = table.reset
     
 }
