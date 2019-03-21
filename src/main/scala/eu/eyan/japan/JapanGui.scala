@@ -152,6 +152,11 @@ object JapanGui extends App {
   resetLabel.onClicked(reset)
   panel.add(resetLabel, CC.xy(3, 1))
   
+  // CANDIDATEREDUCE
+  val candidateLabel = new JLabel("c")
+  candidateLabel.onClicked(candidateReduce)
+  panel.add(candidateLabel, CC.xy(5, 1))
+  
 
   // FIELDS
   for (x <- 0 until width; y <- 0 until height) {
@@ -165,9 +170,9 @@ object JapanGui extends App {
   
   val algo = new Japan8(table.lefts, table.ups, table.newValue)
   
-  def reduceRow(y: Int) = algo.reduceFields(Int.MaxValue)(Row(y))
+  def reduceRow(y: Int) = ???//algo.reduceFields(Int.MaxValue)(Row(y))
 
-  def reduceCol(x: Int) = algo.reduceFields(Int.MaxValue)(Col(x))
+  def reduceCol(x: Int) = ???//algo.reduceFields(Int.MaxValue)(Col(x))
   
   def changeCell(colrow: ColRow) = {
     val actual = table.field$(colrow).get[FieldType]
@@ -180,6 +185,8 @@ object JapanGui extends App {
     .packAndSetVisible
 
   def startToSolve = ThreadPlus.run( algo.solve(table.table) )
+
+  def candidateReduce = ThreadPlus.run( algo.candidateReduce(table.table) )
 
   def reset = table.reset
     

@@ -30,7 +30,7 @@ object Japan8 extends App {
   println(ct)
 }
 
-case class Table(private val table: Array[Array[FieldType]], guiSetField: (Col, Row, FieldType) => Unit) {
+case class Table(val table: Array[Array[FieldType]], guiSetField: (Col, Row, FieldType) => Unit) {
   val cols = (0 until table.size).map(Col(_))
   val rows = (0 until table(0).size).map(Row(_))
 
@@ -39,64 +39,135 @@ case class Table(private val table: Array[Array[FieldType]], guiSetField: (Col, 
     case Row(idx) => row(idx)
   }
   def fieldsAll = rows.map(fields).flatten // FIXME dont use rows
+  def fields = for (col <- cols; row <- rows) yield (table(col.x)(row.y), ColRow(col, row))
 
-  def update(col: Col, row: Row, newVal: FieldType) = {
+  def update(col: Col, row: Row, newVal: FieldType): Unit = {
     table(col.x)(row.y) = newVal
-
     guiSetField(col, row, newVal)
   }
 
+  def refreshGui = for (col <- cols; row <- rows) guiSetField(col, row, table(col.x)(row.y))
+
+  def update(colRow: ColRow, newVal: FieldType): Unit = update(colRow.col, colRow.row, newVal)
+
   private def row(y: Int) = (for (col <- cols) yield table(col.x)(y))
   private def col(x: Int) = (for (row <- rows) yield table(x)(row.y))
-}
 
-class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, FieldType) => Unit) extends TestPlus {
-  def solve(table: Array[Array[FieldType]]): Unit = {
-    this.table = new Table(table, guiSetField)
-    timeouts = scala.collection.mutable.Set[RowOrCol]((this.table.rows ++ this.table.cols): _*)
-    actualReduceTimeout = 10
-    start = System.currentTimeMillis
-    reduceLines(toCheckTimeouted)
+  override def clone = {
+    val newArray = Array.ofDim[FieldType](cols.size, rows.size)
+    for (col <- cols; row <- rows) newArray(col.x)(row.y) = table(col.x)(row.y)
+    Table(newArray, guiSetField)
   }
 
-  private var table: Table = _
-  private var actualReduceTimeout = 1000
-  private var start = 0L
+  override def toString = rows.map(row => cols.map(col => table(col.x)(row.y).toString).mkString).mkString("\r\n")
 
-  private var timeouts: scala.collection.mutable.Set[RowOrCol] = scala.collection.mutable.Set[RowOrCol]()
-  private def toCheckTimeouted = timeouts.toList.sorted(sorter)
+  def unknowns = fieldsAll.count(_ == Unknown)
+}
 
-  def reduceLines(linesToCheck: Lines): Unit = {
-    println("---")
-    println(actualReduceTimeout)
-    println("Lines to check: " + linesToCheck.mkString(" "))
-
-    val reduceResultsOptions = linesToCheck.map(reduceFields(actualReduceTimeout))
-    val error = reduceResultsOptions.exists(_.isEmpty)
-    if (error) {
-      val errorLines = linesToCheck.zip(reduceResultsOptions).filter(_._2.isEmpty).map(_._1)
-      println("Error: line(s) could not be reduced: " + errorLines.mkString(", "))
+class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, FieldType) => Unit) {
+  def solve(guiTable: Array[Array[FieldType]]): Unit = {
+    val table = new Table(guiTable, guiSetField)
+    val timeouts = scala.collection.mutable.Set[RowOrCol]((table.rows ++ table.cols): _*)
+    val firstReduceResult = reduceLines(toCheckTimeouted(timeouts, table), 10, System.currentTimeMillis, table, timeouts)
+    if (firstReduceResult.isEmpty) {
+      println("the blocks are bad, the first reduce was not able to run without error")
     } else {
-      val reduceResults = reduceResultsOptions.flatten
-      val changedLines = reduceResults.flatten.distinct
-      println
-      println("Changed lines:" + changedLines.mkString(" "))
-      val changed = 0 < changedLines.size
-      if (changed) reduceLines(changedLines)
-      else if (0 < toCheckTimeouted.size) {
-        actualReduceTimeout = actualReduceTimeout * 2
-        reduceLines(toCheckTimeouted)
-      } else {
-        val unknown = table.fieldsAll.count(_ == Unknown)
-        val full = table.fieldsAll.count(_ == Full)
-        val empty = table.fieldsAll.count(_ == Empty)
-        println("done: full:" + full + ", empty:" + empty + ", unknown: " + unknown)
-        println(" " + (System.currentTimeMillis - start) + "ms")
+      val unknown = firstReduceResult.get
+      if (unknown == 0) println("The table is ready! Enjoy the picture")
+      //else candidateReduce(table)
+    }
+  }
+
+  def candidateReduce(guiTable: Array[Array[FieldType]]): Unit = {
+    val originalTable = new Table(guiTable, guiSetField)
+    println("candidateReduce" + originalTable.unknowns)
+    val unknownFields = originalTable.fields.filter(_._1 == Unknown).map(_._2)
+    if (unknownFields.size == 0) println("The table is ready! Enjoy the picture")
+    else {
+      val unknownFieldsSorted = unknownFields.sorted(sorter2(originalTable))
+      type Candidate = Tuple2[ColRow, FieldType]
+      val candidatess:Seq[Candidate] = unknownFieldsSorted.map(cr => Seq((cr, Full), (cr, Empty))).flatten
+      println("candidatess" + candidatess.size)
+      val candiSize = (1 to candidatess.size).toList.iterator
+      val candidatesSubsets = candiSize.map(candidatess.combinations(_)).flatten
+      println("candidatesSubsets" + candidatesSubsets)
+      // FIXME: filter same field with Full or empty is not possible!!!
+      val candidatesSubsetsIterator = candidatesSubsets
+      
+      var done = false
+      var candidateIndex = 0
+      while (!done &&  candidatesSubsetsIterator.hasNext) {
+        val candidates = candidatesSubsetsIterator.next
+        //        println("Candidate:" + candidate)
+        val newTable = originalTable.clone
+        
+        for (candidate <- candidates) newTable.update(candidate._1, candidate._2)
+        newTable.refreshGui
+        val timeouts = scala.collection.mutable.Set[RowOrCol]((newTable.rows ++ newTable.cols): _*)
+        val reduceResult = reduceLines(toCheckTimeouted(timeouts, newTable), 10, System.currentTimeMillis, newTable, timeouts)
+        if (reduceResult.isEmpty) {
+          println("candidate " + candidates + " GOOD the blocks are bad, the reduce was not able to run without error")
+          //          println("set candidate inverted: "+candidate)
+          done = true
+          val nextTable = originalTable.clone
+          for (candidate <- candidates)  nextTable.update(candidate._1, if (candidate._2 == Full) Empty else Full)
+          nextTable.refreshGui
+          // this is good! // FIXME: for one field it is good. for two???? think
+          val timeouts = scala.collection.mutable.Set[RowOrCol]((nextTable.rows ++ nextTable.cols): _*)
+          val reduceResult = reduceLines(toCheckTimeouted(timeouts, nextTable), 10, System.currentTimeMillis, nextTable, timeouts)
+          val unknown = reduceResult.get
+          if (unknown == 0) println("After candidate " + candidates + " the table is ready! Enjoy the picture")
+          else candidateReduce(nextTable.table)
+        } else {
+          val unknown = reduceResult.get
+          if (unknown == 0) {
+            println("  After candidate " + candidates + " the table is ready! Enjoy the picture")
+            done = true
+          } else {
+            //println("  After candidate " + candidate + " no error -> dont know if good or bad. try next.")
+            candidateIndex = candidateIndex + 1
+            print(".")
+            if (candidateIndex % 100 == 0) println
+          }
+        }
       }
     }
   }
 
-  def reduceFields(timeoutMs: Int)(rowOrCol: RowOrCol): Option[Lines] = {
+  private def toCheckTimeouted(timeouts: scala.collection.mutable.Set[RowOrCol], table: Table) = timeouts.toList.sorted(sorter(table))
+
+  private def reduceLines(linesToCheck: Lines, actualReduceTimeout: Int, start: Long, table: Table, timeouts: scala.collection.mutable.Set[RowOrCol]): Option[Int] = {
+    //    println("---")
+    //    println(actualReduceTimeout)
+    //    println("Lines to check: " + linesToCheck.mkString(" "))
+
+    val reduceResultsOptions = linesToCheck.map(reduceFields(actualReduceTimeout, table, timeouts))
+    val error = reduceResultsOptions.exists(_.isEmpty)
+    if (error) {
+      val errorLines = linesToCheck.zip(reduceResultsOptions).filter(_._2.isEmpty).map(_._1)
+      //      println("Error: line(s) could not be reduced: " + errorLines.mkString(", "))
+      None
+    } else {
+      val reduceResults = reduceResultsOptions.flatten
+      val changedLines = reduceResults.flatten.distinct
+      //      println
+      //      println("Changed lines:" + changedLines.mkString(" "))
+      val changed = 0 < changedLines.size
+
+      if (changed) {
+        reduceLines(changedLines, actualReduceTimeout, start, table, timeouts)
+      } else if (0 < toCheckTimeouted(timeouts, table).size) {
+        reduceLines(toCheckTimeouted(timeouts, table), actualReduceTimeout * 2, start, table, timeouts)
+      } else {
+        val unknown = table.fieldsAll.count(_ == Unknown)
+        //        println("done: full:" + table.fieldsAll.count(_ == Full) + ", empty:" + table.fieldsAll.count(_ == Empty) + ", unknown: " + unknown)
+        //        println("" + (System.currentTimeMillis - start) + "ms")
+        Option(unknown)
+      }
+    }
+  }
+
+  def reduceFields(timeoutMs: Int, table: Table, timeouts: scala.collection.mutable.Set[RowOrCol])(rowOrCol: RowOrCol): Option[Lines] = {
     val olds = table.fields(rowOrCol)
     //TODO gives RowOrCol back instead of int
     val reduceResultTimeout = ThreadPlus.runBlockingWithTimeout(timeoutMs, reduce(olds, blocks(rowOrCol).toArray), cancel)
@@ -130,7 +201,7 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
   }
 
   //TODO duplicate
-  def complexity(rowOrCol: RowOrCol) = {
+  def complexity(table: Table)(rowOrCol: RowOrCol) = {
     val blocks = this.blocks(rowOrCol)
     val blocksSize = blocks.size
     val places = blocksSize + 1
@@ -143,11 +214,25 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
     Combinations.combinationsWithRepetitionBi(places, extraEmptySpaces)
   }
 
-  def sorter: Ordering[RowOrCol] = (x: RowOrCol, y: RowOrCol) => {
-    val xc = complexity(x)
-    val yc = complexity(y)
+  def sorter(table: Table): Ordering[RowOrCol] = (x: RowOrCol, y: RowOrCol) => {
+    val xc = complexity(table)(x)
+    val yc = complexity(table)(y)
     if (xc == yc) 0
     else if (xc < yc) -1
+    else 1
+  }
+
+  def sorter2(table: Table): Ordering[ColRow] = (cr1: ColRow, cr2: ColRow) => {
+
+    val cr1c = complexity(table)(cr1.col)
+    val cr1r = complexity(table)(cr1.row)
+    val cr2c = complexity(table)(cr2.col)
+    val cr2r = complexity(table)(cr2.row)
+
+    val c1 = if (cr1c < cr1r) cr1c else cr1r
+    val c2 = if (cr2c < cr2r) cr2c else cr2r
+    if (c1 == c2) 0
+    else if (c1 < c2) -1
     else 1
   }
 
@@ -217,47 +302,50 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
     case Col(idx) => ups(idx)
     case Row(idx) => lefts(idx)
   }
+}
 
+class Japan8Test() extends TestPlus {
   val ? = Unknown
   val X = Full
   val E = Empty
+  val j = new Japan8(null, null, null)
 
   @Test
   def testReduce: Unit = {
-    reduce(Array(?, ?, ?, ?, ?), Array(2, 1)).map(_.toList) ==> Option(List(?, X, ?, ?, ?))
-    reduce(Array(?, ?, ?, ?, ?), Array(1, 2)).map(_.toList) ==> Option(List(?, ?, ?, X, ?))
-    reduce(Array(?, ?, ?, ?), Array(1, 2)).map(_.toList) ==> Option(List(X, E, X, X))
-    reduce(Array(?, ?, ?, ?), Array(1, 1)).map(_.toList) ==> Option(List(?, ?, ?, ?))
-    reduce(Array(?, ?, ?), Array(1, 1)).map(_.toList) ==> Option(List(X, E, X))
-    reduce(Array(?, ?, ?), Array(1)).map(_.toList) ==> Option(List(?, ?, ?))
-    reduce(Array(X, E), Array(1)).map(_.toList) ==> Option(List(X, E))
-    reduce(Array(E, X), Array(1)).map(_.toList) ==> Option(List(E, X))
-    reduce(Array(E, ?), Array(1)).map(_.toList) ==> Option(List(E, X))
-    reduce(Array(X, ?), Array(1)).map(_.toList) ==> Option(List(X, E))
-    reduce(Array(?, E), Array(1)).map(_.toList) ==> Option(List(X, E))
-    reduce(Array(?, X), Array(1)).map(_.toList) ==> Option(List(E, X))
-    reduce(Array(?, ?), Array(1)).map(_.toList) ==> Option(List(?, ?))
-    reduce(Array(X, E), Array()).map(_.toList) ==> None
-    reduce(Array(E, X), Array()).map(_.toList) ==> None
-    reduce(Array(E, ?), Array()).map(_.toList) ==> Option(List(E, E))
-    reduce(Array(X, ?), Array()).map(_.toList) ==> None
-    reduce(Array(?, E), Array()).map(_.toList) ==> Option(List(E, E))
-    reduce(Array(?, X), Array()).map(_.toList) ==> None
-    reduce(Array(?, ?), Array()).map(_.toList) ==> Option(List(E, E))
-    reduce(Array(X, E), Array(2)).map(_.toList) ==> None
-    reduce(Array(E, X), Array(2)).map(_.toList) ==> None
-    reduce(Array(E, ?), Array(2)).map(_.toList) ==> None
-    reduce(Array(X, ?), Array(2)).map(_.toList) ==> Option(List(X, X))
-    reduce(Array(?, E), Array(2)).map(_.toList) ==> None
-    reduce(Array(?, X), Array(2)).map(_.toList) ==> Option(List(X, X))
-    reduce(Array(?, ?), Array(2)).map(_.toList) ==> Option(List(X, X))
-    reduce(Array(E), Array()).map(_.toList) ==> Option(List(E))
-    reduce(Array(X), Array()).map(_.toList) ==> None
-    reduce(Array(?), Array()).map(_.toList) ==> Option(List(E))
-    reduce(Array(E), Array(1)).map(_.toList) ==> None
-    reduce(Array(X), Array(1)).map(_.toList) ==> Option(List(X))
-    reduce(Array(?), Array(1)).map(_.toList) ==> Option(List(X))
+    j.reduce(Array(?, ?, ?, ?, ?), Array(2, 1)).map(_.toList) ==> Option(List(?, X, ?, ?, ?))
+    j.reduce(Array(?, ?, ?, ?, ?), Array(1, 2)).map(_.toList) ==> Option(List(?, ?, ?, X, ?))
+    j.reduce(Array(?, ?, ?, ?), Array(1, 2)).map(_.toList) ==> Option(List(X, E, X, X))
+    j.reduce(Array(?, ?, ?, ?), Array(1, 1)).map(_.toList) ==> Option(List(?, ?, ?, ?))
+    j.reduce(Array(?, ?, ?), Array(1, 1)).map(_.toList) ==> Option(List(X, E, X))
+    j.reduce(Array(?, ?, ?), Array(1)).map(_.toList) ==> Option(List(?, ?, ?))
+    j.reduce(Array(X, E), Array(1)).map(_.toList) ==> Option(List(X, E))
+    j.reduce(Array(E, X), Array(1)).map(_.toList) ==> Option(List(E, X))
+    j.reduce(Array(E, ?), Array(1)).map(_.toList) ==> Option(List(E, X))
+    j.reduce(Array(X, ?), Array(1)).map(_.toList) ==> Option(List(X, E))
+    j.reduce(Array(?, E), Array(1)).map(_.toList) ==> Option(List(X, E))
+    j.reduce(Array(?, X), Array(1)).map(_.toList) ==> Option(List(E, X))
+    j.reduce(Array(?, ?), Array(1)).map(_.toList) ==> Option(List(?, ?))
+    j.reduce(Array(X, E), Array()).map(_.toList) ==> None
+    j.reduce(Array(E, X), Array()).map(_.toList) ==> None
+    j.reduce(Array(E, ?), Array()).map(_.toList) ==> Option(List(E, E))
+    j.reduce(Array(X, ?), Array()).map(_.toList) ==> None
+    j.reduce(Array(?, E), Array()).map(_.toList) ==> Option(List(E, E))
+    j.reduce(Array(?, X), Array()).map(_.toList) ==> None
+    j.reduce(Array(?, ?), Array()).map(_.toList) ==> Option(List(E, E))
+    j.reduce(Array(X, E), Array(2)).map(_.toList) ==> None
+    j.reduce(Array(E, X), Array(2)).map(_.toList) ==> None
+    j.reduce(Array(E, ?), Array(2)).map(_.toList) ==> None
+    j.reduce(Array(X, ?), Array(2)).map(_.toList) ==> Option(List(X, X))
+    j.reduce(Array(?, E), Array(2)).map(_.toList) ==> None
+    j.reduce(Array(?, X), Array(2)).map(_.toList) ==> Option(List(X, X))
+    j.reduce(Array(?, ?), Array(2)).map(_.toList) ==> Option(List(X, X))
+    j.reduce(Array(E), Array()).map(_.toList) ==> Option(List(E))
+    j.reduce(Array(X), Array()).map(_.toList) ==> None
+    j.reduce(Array(?), Array()).map(_.toList) ==> Option(List(E))
+    j.reduce(Array(E), Array(1)).map(_.toList) ==> None
+    j.reduce(Array(X), Array(1)).map(_.toList) ==> Option(List(X))
+    j.reduce(Array(?), Array(1)).map(_.toList) ==> Option(List(X))
 
-    println(reduce(Array(E, ?, X, X, X, ?, E, E, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, X, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, E, E, E, E), Array(4, 6, 6)).map(_.toList))
+    println(j.reduce(Array(E, ?, X, X, X, ?, E, E, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, X, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, E, E, E, E), Array(4, 6, 6)).map(_.toList))
   }
 }
