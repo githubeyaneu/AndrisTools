@@ -1,7 +1,7 @@
 package eu.eyan.japan
 
 object Japan {
-  type Fields = Seq[FieldType]
+  type Fields = Array[FieldType] // This should be Array to be faster
   type Blocks = List[Int]
   type Lines = Seq[RowOrCol]
 }

@@ -18,6 +18,8 @@ import rx.lang.scala.subjects.BehaviorSubject
 import eu.eyan.util.rx.lang.scala.ObservablePlus.ObservableImplicit
 import eu.eyan.util.swing.SwingPlus
 import eu.eyan.util.java.lang.ThreadPlus
+import scala.concurrent.duration.Duration
+import java.util.concurrent.TimeUnit
 
 object JapanGui extends App {
 
@@ -44,7 +46,7 @@ object JapanGui extends App {
 
     def newValue(col: Col, row: Row, newVal: FieldType) = fieldMap(ColRow(col, row)).onNext(newVal)
     def field$(cr: ColRow) = fieldMap(cr).distinctUntilChanged
-    def complexity$(rowOrCol: RowOrCol) = rowOrCol$(rowOrCol).map(fieldsComplexity(rowOrCol))
+    def complexity$(rowOrCol: RowOrCol) = rowOrCol$(rowOrCol).map(fieldsComplexity(rowOrCol)).take(1)
     def reset =  for (col <- cols; row <- rows) fieldMap(ColRow(col, row)).onNext(Unknown)
 
     private def fieldsComplexity(rowOrCol: RowOrCol)(list: Fields) = {
@@ -73,7 +75,7 @@ object JapanGui extends App {
       case Row(y) => for (col <- cols) yield fieldMap(ColRow(col, Row(y)))
     }
 
-    private def rowOrCol$(rowOrCol: RowOrCol) = ObservablePlus.toSeq(fields$(rowOrCol))
+    private def rowOrCol$(rowOrCol: RowOrCol) = ObservablePlus.toArray(fields$(rowOrCol))
 
     private val fieldMap = (for (col <- cols; row <- rows) yield (ColRow(col, row), BehaviorSubject[FieldType](Unknown))).toMap
 

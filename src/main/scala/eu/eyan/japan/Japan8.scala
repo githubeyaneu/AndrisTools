@@ -50,8 +50,8 @@ case class Table(val table: Array[Array[FieldType]], guiSetField: (Col, Row, Fie
 
   def update(colRow: ColRow, newVal: FieldType): Unit = update(colRow.col, colRow.row, newVal)
 
-  private def row(y: Int) = (for (col <- cols) yield table(col.x)(y))
-  private def col(x: Int) = (for (row <- rows) yield table(x)(row.y))
+  private def row(y: Int) = (for (col <- cols) yield table(col.x)(y)).toArray
+  private def col(x: Int) = (for (row <- rows) yield table(x)(row.y)).toArray
 
   override def clone = {
     val newArray = Array.ofDim[FieldType](cols.size, rows.size)
@@ -86,21 +86,21 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
     else {
       val unknownFieldsSorted = unknownFields.sorted(sorter2(originalTable))
       type Candidate = Tuple2[ColRow, FieldType]
-      val candidatess:Seq[Candidate] = unknownFieldsSorted.map(cr => Seq((cr, Full), (cr, Empty))).flatten
+      val candidatess: Seq[Candidate] = unknownFieldsSorted.map(cr => Seq((cr, Full), (cr, Empty))).flatten
       println("candidatess" + candidatess.size)
       val candiSize = (1 to candidatess.size).toList.iterator
       val candidatesSubsets = candiSize.map(candidatess.combinations(_)).flatten
       println("candidatesSubsets" + candidatesSubsets)
       // FIXME: filter same field with Full or empty is not possible!!!
       val candidatesSubsetsIterator = candidatesSubsets
-      
+
       var done = false
       var candidateIndex = 0
-      while (!done &&  candidatesSubsetsIterator.hasNext) {
+      while (!done && candidatesSubsetsIterator.hasNext) {
         val candidates = candidatesSubsetsIterator.next
         //        println("Candidate:" + candidate)
         val newTable = originalTable.clone
-        
+
         for (candidate <- candidates) newTable.update(candidate._1, candidate._2)
         newTable.refreshGui
         val timeouts = scala.collection.mutable.Set[RowOrCol]((newTable.rows ++ newTable.cols): _*)
@@ -110,7 +110,7 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
           //          println("set candidate inverted: "+candidate)
           done = true
           val nextTable = originalTable.clone
-          for (candidate <- candidates)  nextTable.update(candidate._1, if (candidate._2 == Full) Empty else Full)
+          for (candidate <- candidates) nextTable.update(candidate._1, if (candidate._2 == Full) Empty else Full)
           nextTable.refreshGui
           // this is good! // FIXME: for one field it is good. for two???? think
           val timeouts = scala.collection.mutable.Set[RowOrCol]((nextTable.rows ++ nextTable.cols): _*)
@@ -200,18 +200,22 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
     changed
   }
 
+  val complexityMap = scala.collection.mutable.Map[RowOrCol, BigInt]()
   //TODO duplicate
   def complexity(table: Table)(rowOrCol: RowOrCol) = {
-    val blocks = this.blocks(rowOrCol)
-    val blocksSize = blocks.size
-    val places = blocksSize + 1
+    def computeComplexity = {
+      val blocks = this.blocks(rowOrCol)
+      val blocksSize = blocks.size
+      val places = blocksSize + 1
 
-    val fieldsLength = table.fields(rowOrCol).size
-    val blocksSum = blocks.sum
-    val blocksAndKnownEmptySpaces = if (blocksSize == 0) 0 else blocksSum + blocksSize - 1
-    val extraEmptySpaces = fieldsLength - blocksAndKnownEmptySpaces
+      val fieldsLength = table.fields(rowOrCol).size
+      val blocksSum = blocks.sum
+      val blocksAndKnownEmptySpaces = if (blocksSize == 0) 0 else blocksSum + blocksSize - 1
+      val extraEmptySpaces = fieldsLength - blocksAndKnownEmptySpaces
 
-    Combinations.combinationsWithRepetitionBi(places, extraEmptySpaces)
+      Combinations.combinationsWithRepetitionBi(places, extraEmptySpaces)
+    }
+    complexityMap.getOrElseUpdate(rowOrCol, computeComplexity)
   }
 
   def sorter(table: Table): Ordering[RowOrCol] = (x: RowOrCol, y: RowOrCol) => {
@@ -253,11 +257,19 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
     def generatePossibleFields(callback: Fields => Unit) = {
       val generatedFields = Unknown ** fieldsLength
 
-      @tailrec
-      def checkIfFieldsApplyToKnown(fromIndex: Int, untilIndex: Int): Boolean =
-        if (fromIndex >= untilIndex) true
-        else if (knownFields(fromIndex) != Unknown && knownFields(fromIndex) != generatedFields(fromIndex)) false
-        else checkIfFieldsApplyToKnown(fromIndex + 1, untilIndex)
+//      @tailrec
+      def checkIfFieldsApplyToKnown(fromIndex: Int, untilIndex: Int): Boolean = {
+        var ret = true
+        var actualIndex = fromIndex
+//    		  if (fromIndex >= untilIndex) true
+//    		  else if (knownFields(fromIndex) != Unknown && knownFields(fromIndex) != generatedFields(fromIndex)) false
+//    		  else checkIfFieldsApplyToKnown(fromIndex + 1, untilIndex)
+        while(ret &&  actualIndex < untilIndex){
+          if (knownFields(actualIndex) != Unknown && knownFields(actualIndex) != generatedFields(actualIndex)) ret = false
+          actualIndex += 1
+        }
+        ret
+      }
 
       def generatePossibleFieldsSteps(remainingStep: Int, remainingExtraEmptySpaces: Int, actualIndex: Int): Unit = {
         if (cancelled) {
@@ -286,11 +298,12 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
 
     var possibleFieldsCounter = 0
     val cumulated = Unknown ** fieldsLength
+    val fieldsCount = (0 until fieldsLength).toArray
     def reducePossibleFieldsCallback(next: Fields) = {
       possibleFieldsCounter = possibleFieldsCounter + 1
       if (possibleFieldsCounter % (10 * 1000 * 1000) == 0) print("_" + ((allPossibleCombinationsWithoutReduce / possibleFieldsCounter) * (System.currentTimeMillis - startTime)) / 60000 + "min")
       if (possibleFieldsCounter == 1) next.copyToArray(cumulated)
-      for (idx <- 0 until fieldsLength) if (cumulated(idx) == Unknown || cumulated(idx) != next(idx)) cumulated(idx) = Unknown
+      for (idx <- fieldsCount) if (cumulated(idx) == Unknown || cumulated(idx) != next(idx)) cumulated(idx) = Unknown
     }
 
     generatePossibleFields(reducePossibleFieldsCallback)
