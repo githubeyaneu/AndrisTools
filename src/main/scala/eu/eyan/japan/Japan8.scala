@@ -13,6 +13,7 @@ import eu.eyan.japan.Japan.Blocks
 import eu.eyan.util.time.TimeCounter
 import eu.eyan.japan.Japan.Lines
 import eu.eyan.japan.Japan.Lines
+import rx.lang.scala.Observable
 
 object Japan8 extends App {
 
@@ -34,7 +35,7 @@ case class Table(val table: Array[Array[FieldType]], guiSetField: (Col, Row, Fie
   val cols = (0 until table.size).map(Col(_))
   val rows = (0 until table(0).size).map(Row(_))
 
-  def fields(rowOrCol: RowOrCol) = rowOrCol match {
+  def fields(rowOrCol: Line) = rowOrCol match {
     case Col(idx) => col(idx)
     case Row(idx) => row(idx)
   }
@@ -64,11 +65,13 @@ case class Table(val table: Array[Array[FieldType]], guiSetField: (Col, Row, Fie
   def unknowns = fieldsAll.count(_ == Unknown)
 }
 
-class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, FieldType) => Unit) {
+class Japan8(lefts: List[Blocks], ups: List[Blocks], width:Width, height:Height, guiSetField: (Col, Row, FieldType) => Unit) {
   def solve(guiTable: Array[Array[FieldType]]): Unit = {
     val table = new Table(guiTable, guiSetField)
-    val timeouts = scala.collection.mutable.Set[RowOrCol]((table.rows ++ table.cols): _*)
+    val timeouts = scala.collection.mutable.Set[Line]((table.rows ++ table.cols): _*)
+
     val firstReduceResult = reduceLines(toCheckTimeouted(timeouts, table), 10, System.currentTimeMillis, table, timeouts)
+
     if (firstReduceResult.isEmpty) {
       println("the blocks are bad, the first reduce was not able to run without error")
     } else {
@@ -84,7 +87,7 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
     val unknownFields = originalTable.fields.filter(_._1 == Unknown).map(_._2)
     if (unknownFields.size == 0) println("The table is ready! Enjoy the picture")
     else {
-      val unknownFieldsSorted = unknownFields.sorted(sorter2(originalTable))
+      val unknownFieldsSorted = unknownFields.sorted(orderCellsByRowOrColComplexity)
       type Candidate = Tuple2[ColRow, FieldType]
       val candidatess: Seq[Candidate] = unknownFieldsSorted.map(cr => Seq((cr, Full), (cr, Empty))).flatten
       println("candidatess" + candidatess.size)
@@ -103,7 +106,7 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
 
         for (candidate <- candidates) newTable.update(candidate._1, candidate._2)
         newTable.refreshGui
-        val timeouts = scala.collection.mutable.Set[RowOrCol]((newTable.rows ++ newTable.cols): _*)
+        val timeouts = scala.collection.mutable.Set[Line]((newTable.rows ++ newTable.cols): _*)
         val reduceResult = reduceLines(toCheckTimeouted(timeouts, newTable), 10, System.currentTimeMillis, newTable, timeouts)
         if (reduceResult.isEmpty) {
           println("candidate " + candidates + " GOOD the blocks are bad, the reduce was not able to run without error")
@@ -113,7 +116,7 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
           for (candidate <- candidates) nextTable.update(candidate._1, if (candidate._2 == Full) Empty else Full)
           nextTable.refreshGui
           // this is good! // FIXME: for one field it is good. for two???? think
-          val timeouts = scala.collection.mutable.Set[RowOrCol]((nextTable.rows ++ nextTable.cols): _*)
+          val timeouts = scala.collection.mutable.Set[Line]((nextTable.rows ++ nextTable.cols): _*)
           val reduceResult = reduceLines(toCheckTimeouted(timeouts, nextTable), 10, System.currentTimeMillis, nextTable, timeouts)
           val unknown = reduceResult.get
           if (unknown == 0) println("After candidate " + candidates + " the table is ready! Enjoy the picture")
@@ -134,14 +137,14 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
     }
   }
 
-  private def toCheckTimeouted(timeouts: scala.collection.mutable.Set[RowOrCol], table: Table) = timeouts.toList.sorted(sorter(table))
+  private def toCheckTimeouted(timeouts: scala.collection.mutable.Set[Line], table: Table) = timeouts.toList.sorted(orderLinesByComplexity)
 
-  private def reduceLines(linesToCheck: Lines, actualReduceTimeout: Int, start: Long, table: Table, timeouts: scala.collection.mutable.Set[RowOrCol]): Option[Int] = {
+  private def reduceLines(linesToCheck: Lines, actualReduceTimeout: Int, start: Long, table: Table, timeouts: scala.collection.mutable.Set[Line]): Option[Int] = {
     //    println("---")
     //    println(actualReduceTimeout)
     //    println("Lines to check: " + linesToCheck.mkString(" "))
 
-    val reduceResultsOptions = linesToCheck.map(reduceFields(actualReduceTimeout, table, timeouts))
+    val reduceResultsOptions = linesToCheck.map(reduceLine(actualReduceTimeout, table, timeouts))
     val error = reduceResultsOptions.exists(_.isEmpty)
     if (error) {
       val errorLines = linesToCheck.zip(reduceResultsOptions).filter(_._2.isEmpty).map(_._1)
@@ -167,10 +170,10 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
     }
   }
 
-  def reduceFields(timeoutMs: Int, table: Table, timeouts: scala.collection.mutable.Set[RowOrCol])(rowOrCol: RowOrCol): Option[Lines] = {
+  def reduceLine(timeoutMs: Int, table: Table, timeouts: scala.collection.mutable.Set[Line])(rowOrCol: Line): Option[Lines] = {
     val olds = table.fields(rowOrCol)
-    //TODO gives RowOrCol back instead of int
-    val reduceResultTimeout = ThreadPlus.runBlockingWithTimeout(timeoutMs, reduce(olds, blocks(rowOrCol).toArray), cancel)
+    val cancelled$ = BehaviorSubject(false)
+    val reduceResultTimeout = ThreadPlus.runBlockingWithTimeout(timeoutMs, reduce(olds, blocks(rowOrCol).toArray, cancelled$), cancelled$.onNext(true))
 
     val changed = if (reduceResultTimeout.isEmpty) {
       timeouts.add(rowOrCol)
@@ -200,15 +203,25 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
     changed
   }
 
-  val complexityMap = scala.collection.mutable.Map[RowOrCol, BigInt]()
-  //TODO duplicate
-  def complexity(table: Table)(rowOrCol: RowOrCol) = {
+  
+  private def blocks(rowOrCol: Line): Blocks = rowOrCol match {
+    case Col(idx) => ups(idx)
+    case Row(idx) => lefts(idx)
+  }
+
+  private def size(rowOrCol: Line): Int = rowOrCol match {
+    case Col(_) => height.h
+    case Row(_) => width.w
+  }
+  
+  private val complexityMap = scala.collection.mutable.Map[Line, BigInt]()
+  private def complexity(rowOrCol: Line) = {
     def computeComplexity = {
       val blocks = this.blocks(rowOrCol)
       val blocksSize = blocks.size
       val places = blocksSize + 1
 
-      val fieldsLength = table.fields(rowOrCol).size
+      val fieldsLength = size(rowOrCol)
       val blocksSum = blocks.sum
       val blocksAndKnownEmptySpaces = if (blocksSize == 0) 0 else blocksSum + blocksSize - 1
       val extraEmptySpaces = fieldsLength - blocksAndKnownEmptySpaces
@@ -218,20 +231,19 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
     complexityMap.getOrElseUpdate(rowOrCol, computeComplexity)
   }
 
-  def sorter(table: Table): Ordering[RowOrCol] = (x: RowOrCol, y: RowOrCol) => {
-    val xc = complexity(table)(x)
-    val yc = complexity(table)(y)
+  private def orderLinesByComplexity: Ordering[Line] = (x: Line, y: Line) => {
+    val xc = complexity(x)
+    val yc = complexity(y)
     if (xc == yc) 0
     else if (xc < yc) -1
     else 1
   }
 
-  def sorter2(table: Table): Ordering[ColRow] = (cr1: ColRow, cr2: ColRow) => {
-
-    val cr1c = complexity(table)(cr1.col)
-    val cr1r = complexity(table)(cr1.row)
-    val cr2c = complexity(table)(cr2.col)
-    val cr2r = complexity(table)(cr2.row)
+  private def orderCellsByRowOrColComplexity: Ordering[ColRow] = (cr1: ColRow, cr2: ColRow) => {
+    val cr1c = complexity(cr1.col)
+    val cr1r = complexity(cr1.row)
+    val cr2c = complexity(cr2.col)
+    val cr2r = complexity(cr2.row)
 
     val c1 = if (cr1c < cr1r) cr1c else cr1r
     val c2 = if (cr2c < cr2r) cr2c else cr2r
@@ -240,11 +252,9 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
     else 1
   }
 
-  def cancel = cancelled = true
-  private var cancelled = false
-
-  def reduce(knownFields: Fields, blocks: Array[Int]): Option[Fields] = {
-    cancelled = false
+  def reduce(knownFields: Fields, blocks: Array[Int], cancelled$: Observable[Boolean] = BehaviorSubject(false)): Option[Fields] = {
+    var cancelled = false
+    cancelled$.subscribe(newCancelled => {cancelled = newCancelled}) 
     val startTime = System.currentTimeMillis
     val fieldsLength = knownFields.size
     val blocksSize = blocks.size
@@ -257,18 +267,11 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
     def generatePossibleFields(callback: Fields => Unit) = {
       val generatedFields = Unknown ** fieldsLength
 
-//      @tailrec
+      @tailrec
       def checkIfFieldsApplyToKnown(fromIndex: Int, untilIndex: Int): Boolean = {
-        var ret = true
-        var actualIndex = fromIndex
-//    		  if (fromIndex >= untilIndex) true
-//    		  else if (knownFields(fromIndex) != Unknown && knownFields(fromIndex) != generatedFields(fromIndex)) false
-//    		  else checkIfFieldsApplyToKnown(fromIndex + 1, untilIndex)
-        while(ret &&  actualIndex < untilIndex){
-          if (knownFields(actualIndex) != Unknown && knownFields(actualIndex) != generatedFields(actualIndex)) ret = false
-          actualIndex += 1
-        }
-        ret
+        if (fromIndex >= untilIndex) true
+        else if (knownFields(fromIndex) != Unknown && knownFields(fromIndex) != generatedFields(fromIndex)) false
+        else checkIfFieldsApplyToKnown(fromIndex + 1, untilIndex)
       }
 
       def generatePossibleFieldsSteps(remainingStep: Int, remainingExtraEmptySpaces: Int, actualIndex: Int): Unit = {
@@ -301,7 +304,7 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
     val fieldsCount = (0 until fieldsLength).toArray
     def reducePossibleFieldsCallback(next: Fields) = {
       possibleFieldsCounter = possibleFieldsCounter + 1
-      if (possibleFieldsCounter % (10 * 1000 * 1000) == 0) print("_" + ((allPossibleCombinationsWithoutReduce / possibleFieldsCounter) * (System.currentTimeMillis - startTime)) / 60000 + "min")
+      //      if (possibleFieldsCounter % (10 * 1000 * 1000) == 0) print("_" + ((allPossibleCombinationsWithoutReduce / possibleFieldsCounter) * (System.currentTimeMillis - startTime)) / 60000 + "min")
       if (possibleFieldsCounter == 1) next.copyToArray(cumulated)
       for (idx <- fieldsCount) if (cumulated(idx) == Unknown || cumulated(idx) != next(idx)) cumulated(idx) = Unknown
     }
@@ -310,18 +313,13 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
 
     if (possibleFieldsCounter == 0) None else Option(cumulated)
   }
-
-  def blocks(rowOrCol: RowOrCol): Blocks = rowOrCol match {
-    case Col(idx) => ups(idx)
-    case Row(idx) => lefts(idx)
-  }
 }
 
 class Japan8Test() extends TestPlus {
   val ? = Unknown
   val X = Full
   val E = Empty
-  val j = new Japan8(null, null, null)
+  val j = new Japan8(null, null, Width(0), Height(0), null)
 
   @Test
   def testReduce: Unit = {
