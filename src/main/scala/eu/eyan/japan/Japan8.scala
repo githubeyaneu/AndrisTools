@@ -86,21 +86,21 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
     else {
       val unknownFieldsSorted = unknownFields.sorted(sorter2(originalTable))
       type Candidate = Tuple2[ColRow, FieldType]
-      val candidatess:Seq[Candidate] = unknownFieldsSorted.map(cr => Seq((cr, Full), (cr, Empty))).flatten
+      val candidatess: Seq[Candidate] = unknownFieldsSorted.map(cr => Seq((cr, Full), (cr, Empty))).flatten
       println("candidatess" + candidatess.size)
       val candiSize = (1 to candidatess.size).toList.iterator
       val candidatesSubsets = candiSize.map(candidatess.combinations(_)).flatten
       println("candidatesSubsets" + candidatesSubsets)
       // FIXME: filter same field with Full or empty is not possible!!!
       val candidatesSubsetsIterator = candidatesSubsets
-      
+
       var done = false
       var candidateIndex = 0
-      while (!done &&  candidatesSubsetsIterator.hasNext) {
+      while (!done && candidatesSubsetsIterator.hasNext) {
         val candidates = candidatesSubsetsIterator.next
         //        println("Candidate:" + candidate)
         val newTable = originalTable.clone
-        
+
         for (candidate <- candidates) newTable.update(candidate._1, candidate._2)
         newTable.refreshGui
         val timeouts = scala.collection.mutable.Set[RowOrCol]((newTable.rows ++ newTable.cols): _*)
@@ -110,7 +110,7 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
           //          println("set candidate inverted: "+candidate)
           done = true
           val nextTable = originalTable.clone
-          for (candidate <- candidates)  nextTable.update(candidate._1, if (candidate._2 == Full) Empty else Full)
+          for (candidate <- candidates) nextTable.update(candidate._1, if (candidate._2 == Full) Empty else Full)
           nextTable.refreshGui
           // this is good! // FIXME: for one field it is good. for two???? think
           val timeouts = scala.collection.mutable.Set[RowOrCol]((nextTable.rows ++ nextTable.cols): _*)
@@ -137,9 +137,9 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
   private def toCheckTimeouted(timeouts: scala.collection.mutable.Set[RowOrCol], table: Table) = timeouts.toList.sorted(sorter(table))
 
   private def reduceLines(linesToCheck: Lines, actualReduceTimeout: Int, start: Long, table: Table, timeouts: scala.collection.mutable.Set[RowOrCol]): Option[Int] = {
-    //    println("---")
-    //    println(actualReduceTimeout)
-    //    println("Lines to check: " + linesToCheck.mkString(" "))
+        println("---")
+        println(actualReduceTimeout)
+        println("Lines to check: " + linesToCheck.mkString(" "))
 
     val reduceResultsOptions = linesToCheck.map(reduceFields(actualReduceTimeout, table, timeouts))
     val error = reduceResultsOptions.exists(_.isEmpty)
@@ -157,7 +157,7 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
       if (changed) {
         reduceLines(changedLines, actualReduceTimeout, start, table, timeouts)
       } else if (0 < toCheckTimeouted(timeouts, table).size) {
-        reduceLines(toCheckTimeouted(timeouts, table), actualReduceTimeout * 2, start, table, timeouts)
+        reduceLines(toCheckTimeouted(timeouts, table), actualReduceTimeout * 10, start, table, timeouts)
       } else {
         val unknown = table.fieldsAll.count(_ == Unknown)
         //        println("done: full:" + table.fieldsAll.count(_ == Full) + ", empty:" + table.fieldsAll.count(_ == Empty) + ", unknown: " + unknown)
@@ -167,16 +167,25 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
     }
   }
 
+  val reduceResults = scala.collection.mutable.Map[Tuple2[IndexedSeq[FieldType], List[Int]], Option[Option[Japan.Fields]]]()
+
   def reduceFields(timeoutMs: Int, table: Table, timeouts: scala.collection.mutable.Set[RowOrCol])(rowOrCol: RowOrCol): Option[Lines] = {
     val olds = table.fields(rowOrCol)
+    val blocksOfRowOrCol = blocks(rowOrCol).toArray
+    val reduceKey = (olds, blocksOfRowOrCol.toList)
+
     //TODO gives RowOrCol back instead of int
-    val reduceResultTimeout = ThreadPlus.runBlockingWithTimeout(timeoutMs, reduce(olds, blocks(rowOrCol).toArray), cancel)
+    val reduceResultTimeout =
+      if (reduceResults.contains(reduceKey)) reduceResults(reduceKey)
+      else ThreadPlus.runBlockingWithTimeout(timeoutMs, reduce(olds, blocksOfRowOrCol), cancel)
 
     val changed = if (reduceResultTimeout.isEmpty) {
       timeouts.add(rowOrCol)
       Option(Seq()) // no changed row or col
     } else {
       timeouts.remove(rowOrCol)
+      reduceResults.put(reduceKey, reduceResultTimeout)
+      
       val reduceResult = reduceResultTimeout.get
       if (reduceResult.isEmpty) None // this indicates that there is an error with the table, cannot reduced properly
       else {
@@ -196,7 +205,7 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
       }
     }
 
-    //print(rowOrCol + " " + (if (changed.size > 0) changed.size else if (reduceResultTimeout.nonEmpty) "." else ""))
+    print(" " + rowOrCol + "" + (if (reduceResultTimeout.isEmpty) "t" else if (changed.size > 0) changed.size else  "."  ))
     changed
   }
 
