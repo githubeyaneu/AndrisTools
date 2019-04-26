@@ -31,7 +31,7 @@ object Japan8 extends App {
   println(ct)
 }
 
-case class Table(val table: Array[Array[FieldType]], guiSetField: (Col, Row, FieldType) => Unit) {
+case class Table8(val table: Array[Array[FieldType]], guiSetField: (Col, Row, FieldType) => Unit) {
   val cols = (0 until table.size).map(Col(_))
   val rows = (0 until table(0).size).map(Row(_))
 
@@ -57,7 +57,7 @@ case class Table(val table: Array[Array[FieldType]], guiSetField: (Col, Row, Fie
   override def clone = {
     val newArray = Array.ofDim[FieldType](cols.size, rows.size)
     for (col <- cols; row <- rows) newArray(col.x)(row.y) = table(col.x)(row.y)
-    Table(newArray, guiSetField)
+    Table8(newArray, guiSetField)
   }
 
   override def toString = rows.map(row => cols.map(col => table(col.x)(row.y).toString).mkString).mkString("\r\n")
@@ -65,9 +65,10 @@ case class Table(val table: Array[Array[FieldType]], guiSetField: (Col, Row, Fie
   def unknowns = fieldsAll.count(_ == Unknown)
 }
 
+
 class Japan8(lefts: List[Blocks], ups: List[Blocks], width:Width, height:Height, guiSetField: (Col, Row, FieldType) => Unit) {
   def solve(guiTable: Array[Array[FieldType]]): Unit = {
-    val table = new Table(guiTable, guiSetField)
+    val table = new Table8(guiTable, guiSetField)
     val timeouts = scala.collection.mutable.Set[Line]((table.rows ++ table.cols): _*)
 
     val firstReduceResult = reduceLines(toCheckTimeouted(timeouts, table), 10, System.currentTimeMillis, table, timeouts)
@@ -82,7 +83,7 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], width:Width, height:Height,
   }
 
   def candidateReduce(guiTable: Array[Array[FieldType]]): Unit = {
-    val originalTable = new Table(guiTable, guiSetField)
+    val originalTable = new Table8(guiTable, guiSetField)
     println("candidateReduce" + originalTable.unknowns)
     val unknownFields = originalTable.fields.filter(_._1 == Unknown).map(_._2)
     if (unknownFields.size == 0) println("The table is ready! Enjoy the picture")
@@ -137,9 +138,9 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], width:Width, height:Height,
     }
   }
 
-  private def toCheckTimeouted(timeouts: scala.collection.mutable.Set[Line], table: Table) = timeouts.toList.sorted(orderLinesByComplexity)
+  private def toCheckTimeouted(timeouts: scala.collection.mutable.Set[Line], table: Table8) = timeouts.toList.sorted(orderLinesByComplexity)
 
-  private def reduceLines(linesToCheck: Lines, actualReduceTimeout: Int, start: Long, table: Table, timeouts: scala.collection.mutable.Set[Line]): Option[Int] = {
+  private def reduceLines(linesToCheck: Lines, actualReduceTimeout: Int, start: Long, table: Table8, timeouts: scala.collection.mutable.Set[Line]): Option[Int] = {
     //    println("---")
     //    println(actualReduceTimeout)
     //    println("Lines to check: " + linesToCheck.mkString(" "))
@@ -170,7 +171,7 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], width:Width, height:Height,
     }
   }
 
-  def reduceLine(timeoutMs: Int, table: Table, timeouts: scala.collection.mutable.Set[Line])(rowOrCol: Line): Option[Lines] = {
+  def reduceLine(timeoutMs: Int, table: Table8, timeouts: scala.collection.mutable.Set[Line])(rowOrCol: Line): Option[Lines] = {
     val olds = table.fields(rowOrCol)
     val cancelled$ = BehaviorSubject(false)
     val reduceResultTimeout = ThreadPlus.runBlockingWithTimeout(timeoutMs, reduce(olds, blocks(rowOrCol).toArray, cancelled$), cancelled$.onNext(true))

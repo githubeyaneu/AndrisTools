@@ -1,11 +1,19 @@
 package eu.eyan.japan
 
 object Japan {
-  type Fields = Array[FieldType] // This should be Array to be faster
+  type Fields = Array[FieldType]
   type Blocks = List[Int]
   type Lines = Seq[Line]
+  type Table = Array[Array[FieldType]]
 }
-trait Line
+
+
+trait Line{
+  def ifRowOrCol[T](ifRow: Int => T, ifCol: Int => T) = this match {
+      case Col(x) => ifCol(x)
+      case Row(y) => ifRow(y)
+    }
+}
 case class Col(x: Int) extends Line { override def toString = "c" + x }
 case class Row(y: Int) extends Line { override def toString = "r" + y }
 case class ColRow(col: Col, row: Row)

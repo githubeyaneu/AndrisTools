@@ -27,6 +27,8 @@ object JapanGui extends App {
   val dir = """src\main\scala\eu\eyan\japan\puzzles\"""
   val table = createTableFromFile(dir + file)
 
+  val algo = new Japan9(TableTopAndLeftBlocks(table.ups.toArray, table.lefts.toArray), table.newValue)
+
   def createTableFromFile(file: String) = {
     val lines = file.linesFromFile.map(_.trim).toList
     val sides = lines.map(_.split("[\t ]").toList.map(_.toInt)).span(!_.contains(888))
@@ -146,7 +148,7 @@ object JapanGui extends App {
 
   // SOLVE
   val labelSolve = new JLabel("s")
-  labelSolve.onClicked(startToSolve)
+  labelSolve.onClicked(startToReduce)
   panel.add(labelSolve, CC.xy(1, 1))
 
   // RESET
@@ -169,8 +171,6 @@ object JapanGui extends App {
     panel.add(label, CC.xy(col, row))
   }
 
-  val algo = new Japan8(table.lefts, table.ups, table.width, table.height, table.newValue)
-
   def reduceRow(y: Int) = ??? //algo.reduceFields(Int.MaxValue)(Row(y))
 
   def reduceCol(x: Int) = ??? //algo.reduceFields(Int.MaxValue)(Col(x))
@@ -185,7 +185,9 @@ object JapanGui extends App {
     .onCloseExit
     .packAndSetVisible
 
-  def startToSolve = ThreadPlus.run(algo.solve(table.table))
+//  def startToSolve = ThreadPlus.run(algo.solve(table.table))
+
+  def startToReduce = ThreadPlus.run(algo.reduce(table.table))
 
   def candidateReduce = ThreadPlus.run(algo.candidateReduce(table.table))
 
