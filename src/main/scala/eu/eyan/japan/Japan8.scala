@@ -167,7 +167,7 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
     }
   }
 
-  val reduceResults = scala.collection.mutable.Map[Tuple2[IndexedSeq[FieldType], List[Int]], Option[Option[Japan.Fields]]]()
+  //val reduceResults = scala.collection.mutable.Map[Tuple2[IndexedSeq[FieldType], List[Int]], Option[Option[Japan.Fields]]]()
 
   def reduceFields(timeoutMs: Int, table: Table, timeouts: scala.collection.mutable.Set[RowOrCol])(rowOrCol: RowOrCol): Option[Lines] = {
     val olds = table.fields(rowOrCol)
@@ -176,15 +176,15 @@ class Japan8(lefts: List[Blocks], ups: List[Blocks], guiSetField: (Col, Row, Fie
 
     //TODO gives RowOrCol back instead of int
     val reduceResultTimeout =
-      if (reduceResults.contains(reduceKey)) reduceResults(reduceKey)
-      else ThreadPlus.runBlockingWithTimeout(timeoutMs, reduce(olds, blocksOfRowOrCol), cancel)
+//      if (reduceResults.contains(reduceKey)) reduceResults(reduceKey) else
+        ThreadPlus.runBlockingWithTimeout(timeoutMs, reduce(olds, blocksOfRowOrCol), cancel)
 
     val changed = if (reduceResultTimeout.isEmpty) {
       timeouts.add(rowOrCol)
       Option(Seq()) // no changed row or col
     } else {
       timeouts.remove(rowOrCol)
-      reduceResults.put(reduceKey, reduceResultTimeout)
+      //reduceResults.put(reduceKey, reduceResultTimeout)
       
       val reduceResult = reduceResultTimeout.get
       if (reduceResult.isEmpty) None // this indicates that there is an error with the table, cannot reduced properly
