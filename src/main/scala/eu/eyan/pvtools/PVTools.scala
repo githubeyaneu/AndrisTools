@@ -21,6 +21,8 @@ import java.net.URLEncoder
 
 import eu.eyan.util.java.time.InstantPlus.InstantImplicit
 import java.io.File
+import java.nio.file.attribute.FileTime
+import java.nio.file.{Files, Paths}
 
 import eu.eyan.util.swing.JToggleButtonPlus.JToggleButtonImplicit
 import javax.swing.JScrollPane
@@ -110,45 +112,59 @@ object PVTools extends App {
     var progressBytes = 0L
     progressBar valueChanged 0
 
+    Log.deactivate //FIXME
+    def setProgress(bytes: Long) = {
+      val newVal = if (filesToImportSizeSum == 0) 0 else (bytes * 100 / filesToImportSizeSum).toInt
+      progressBar.valueChanged(newVal)
+    }
 
-    def setProgress(bytes: Long) = progressBar.valueChanged(if (filesToImportSizeSum == 0) 0 else (bytes * 100 / filesToImportSizeSum).toInt)
-
-    def fileProgress(bytes: Long) = {
+    def fileProgress(file:File)(bytes: Long) = {
       progressBytes += bytes
       setProgress(progressBytes)
       Log.trace("progressBytes " + progressBytes)
       Log.trace("progressBytes " + (bytes * 100 / filesToImportSizeSum))
     }
 
-    val importedFiles = files.par.map(importFile(fileProgress))
+    val importResults = files.par.map(file => importFile(fileProgress(file))(file)).toList.sortBy(_._2)
+    val importSuccessful = importResults.filter(_._1.isEmpty)
+    val importFailed     = importResults.filter(_._1.nonEmpty)
 
-    log("Imported files:\n"+importedFiles.mkString("\n")+".")
+    log("Imported files:\n"+importSuccessful.mkString("\n")+".")
+    log("NOT Imported files:\n"+importFailed.mkString("\n")+".")
 
+    val newList = alreadyImportedFiles ++ importSuccessful.map(_._2)
+    newList.mkStringNL.writeToFile(alreadyImportedFile)
 
     importLabel.text("Import finished")
     progressBar.finished
   }
 
-  def importFile(progressCallback: Long => Unit)(fileToImport:File) = {
+  def importFile(progressCallback: Long => Unit)(fileToImport:File): (/*TODO refactor to try */Option[String], File) = {
 
     try {
       Log.info("---------------------------------------------")
       //val tempFile = fileToImport.copyToDir(tempPathTextField.getText.asDir)
 
-      var bytesSum = 0L
+      var previousProgressBytes = 0L
+      val fileToImportLength = fileToImport.length
 
-      val importResult =
+      def convertActualBytesToProgress(actualBytes:Long) =  {
+        val nextActualBytes = if(actualBytes<fileToImportLength) actualBytes else fileToImportLength
+        progressCallback(nextActualBytes-previousProgressBytes)
+        previousProgressBytes = nextActualBytes
+      }
+
+      val importError:Option[String] =
       //if (tempFile.nonEmpty)
       {
         //val fileName = tempFile.get.getName
-        val fileName = fileToImport.getName
 
-        val dateInFileName = "\\d{8}[_-]?\\d{6}"
-        val fileNameDTs = fileToImport.getName.findAll(dateInFileName)
-        val lastModifiedTime = fileToImport.lastModifiedTime.toString("yyyyMMdd_HHmmss")
-        val exifDT = exifDateTime(fileToImport)
-
-        val fileNameWithoutDate = fileName.replaceAll(dateInFileName,"").trim
+        lazy val fileToImportName = fileToImport.withoutExtension.getName
+        lazy val fileToImportExtension = fileToImport.extension.toLowerCase
+        lazy val dateInFileName = "\\d{8}[_-]?\\d{6}"
+        lazy val fileNameDTs = fileToImportName.findAll(dateInFileName)
+        lazy val lastModifiedTime = fileToImport.lastModifiedTime.toString("yyyyMMdd_HHmmss")
+        lazy val exifDT = exifDateTime(fileToImport)
 
         def extendWithSpaceIfNeeded(s:String) = {
           val ret = if(s.contains(" ")) s else s.patch(8," ",0)
@@ -157,31 +173,64 @@ object PVTools extends App {
         }
 
 
-        val targetDate =
+        val targetDateRaw =
           if(fileNameDTs.nonEmpty) fileNameDTs.last
           else if(exifDT.nonEmpty)  exifDT.get
           else  lastModifiedTime
 
+        val targetDate = extendWithSpaceIfNeeded(targetDateRaw.replaceAll("[_-]"," ").trim)
 
-        val targetFileWithCorrectName = (exportPathTextField.getText + "\\"+extendWithSpaceIfNeeded(targetDate.replaceAll("[_-]"," ").trim)+" "+fileNameWithoutDate).asFile
-        val targetFile = if (isVideoToConvert(fileToImport)) (targetFileWithCorrectName.withoutExtension + ".mp4").asFile else targetFileWithCorrectName
+        val fileNameWithoutDate = fileToImportName.replaceAll(dateInFileName,"").trim
 
+        val targetFileWithCorrectName = ((exportPathTextField.getText + "\\"+targetDate+" "+fileNameWithoutDate).trim+fileToImportExtension).asFile
+        val targetFileMaybeDuplicate =
+          if (isVideoToConvert(fileToImport)) (targetFileWithCorrectName.withoutExtension + ".mp4").asFile
+          else targetFileWithCorrectName
+
+        if (targetFileMaybeDuplicate.exists) Log.info("ALREADY EXISTS "+targetFileMaybeDuplicate)
+
+        val targetFile =  targetFileMaybeDuplicate.generateNewNameIfExists()
+//        log(fileToImport+" "+fileToImportName)
+//        log(fileToImport+" "+fileToImportExtension)
+//        log(fileToImport+" "+dateInFileName)
+//        log(fileToImport+" "+fileNameDTs)
+//        log(fileToImport+" "+lastModifiedTime)
+//        log(fileToImport+" "+targetDateRaw)
+//        log(fileToImport+" "+targetDate)
+//        log(fileToImport+" "+fileNameWithoutDate)
+//        log(fileToImport+" "+targetFileWithCorrectName)
+//        log(fileToImport+" "+targetFileMaybeDuplicate)
         log((if (targetFile.exists) "ALREADY EXISTS" else "START IMPORT")+"\t"+fileToImport.getName+"\t"+fileNameDTs+"\t"+lastModifiedTime+"\t"+exifDT+"\t"+targetFile.getName)
 
-        val importResult =
-          if(targetFile.exists) false
+        val importResult:Option[String] =
+          if(targetFile.exists) Option("ALREADY EXISTS")
           else if(doImport.isSelected) {
-            Log.info("Convert or copy " + fileToImport + " to " + targetFile)
             // Import File
-            val importResult =
-              if (isVideoToConvert(fileToImport)){
-                convertVideo(fileToImport, targetFile, bytes => {bytesSum+=bytes; progressCallback(bytes)})
-              }
-              else fileToImport.copyTo(targetFile)
-            Log.info("Import result " + fileToImport + " = " + importResult)
-            importResult
+            if (isVideoToConvert(fileToImport)){
+              Log.info("Convert video " + fileToImport + " to " + targetFile)
+
+              val res = convertVideoToMp4(fileToImport, targetFile, convertActualBytesToProgress)
+              targetFile.setLastModified(fileToImport.lastModified)
+              Files.setAttribute(targetFile.toPath, "creationTime", FileTime.from(fileToImport.creationTime))
+
+
+              Log.info("Import result " + fileToImport + " = " + res)
+              if(res) None
+              else Option("Conversion not successful to "+targetFile)
+            }
+            else {
+              Log.info("Copy " + fileToImport + " to " + targetFile)
+
+              val res = fileToImport.copyTo(targetFile)
+              targetFile.setLastModified(fileToImport.lastModified)
+              Files.setAttribute(targetFile.toPath, "creationTime", FileTime.from(fileToImport.creationTime))
+
+              Log.info("Import result " + fileToImport + " = " + res)
+              if(res) None
+              else Option("Copy not successful to "+targetFile)
+            }
           }
-          else false
+          else Option("Do import not selected")
 
         //val deleteTempSuccess = tempFile.get.delete
         //Log.info(s"Delete temp: $tempFile $deleteTempSuccess")
@@ -193,17 +242,16 @@ object PVTools extends App {
       //            false
       //          }
 
-      progressCallback( fileToImport.length - bytesSum)
+      convertActualBytesToProgress( fileToImportLength )
 
-      if (importResult) {
-        val newList = alreadyImportedFiles ++ List(fileToImport)
-        Option(newList.mkStringNL.writeToFile(alreadyImportedFile))
+      if (importError.isEmpty) {
+        (None, fileToImport)
       } else {
-        None
+        (Option("NOT IMPORTED "+importError.get), fileToImport)
       }
     } catch {
       case e: Throwable => Log.error(e)
-        None
+        (Option("ERROR "+e.getClass.getName+": "+e.getMessage), fileToImport)
     }
   }
 
@@ -240,7 +288,7 @@ object PVTools extends App {
         Log.info("Checking files to import: " + filesToImport.size + " files.")
         if (filesToImport.nonEmpty) frame.state_Normal.visible.toFront()
 
-        filesToImport
+        filesToImport.sortBy(_.length)
       }
     finally checkToImportButton.setEnabled(true)
   }
@@ -250,10 +298,10 @@ object PVTools extends App {
   def writeEmail() =
     Desktop.getDesktop.mail(new URI("mailto:PVTools@eyan.eu?subject=Photo%20and%20video%20import&body=" + URLEncoder.encode(LogWindow.getAllLogs, "utf-8").replace("+", "%20")))
 
-  def convertVideo(in: File, out: File, progress: Int => Unit) = {
+  def convertVideoToMp4(in: File, out: File, progress: Long => Unit) = {
     Log.info("Converting " + in + " to " + out)
     val convertBat = s"""${ffmpegPathTextField.getText} -i "$in" -vf yadif -vcodec mpeg4 -b:v 17M -acodec libmp3lame -b:a 192k -y "$out""""
-    val exitCode = convertBat.executeAsProcessWithResultAndOutputLineCallback(s => s.findGroup("size= *(\\d*)kB".r).foreach(kB => progress(kB.toInt * 1024)))
+    val exitCode = convertBat.executeAsProcessWithResultAndOutputLineCallback(s => s.findGroup("size= *(\\d*)kB".r).foreach(kB => progress(kB.toLong * 1024)))
     Log.info("Converting exitCode=" + exitCode)
     exitCode == 0
   }
@@ -266,7 +314,6 @@ object PVTools extends App {
   def alert(msg: String) = JOptionPane.showMessageDialog(null, msg)
 
   def exifDateTime(file: File) = {
-    Log.activateAllLevel
     val exifCmd = exiftoolPathTextField.getText + " -T -DateTimeOriginal \"" + file + "\""
 
     val res = exifCmd.executeAsProcessWithResult(Codec.ISO8859)
