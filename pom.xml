@@ -96,7 +96,7 @@
 	<dependencies>
 
 		<dependency>
-			<groupId>eu.eyan.util</groupId>
+			<groupId>eu.eyan</groupId>
 			<artifactId>eyan_helper</artifactId>
 			<version>0.0.1-SNAPSHOT</version>
 		</dependency>
