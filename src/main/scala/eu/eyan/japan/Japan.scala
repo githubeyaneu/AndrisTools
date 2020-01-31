@@ -13,7 +13,7 @@ object Japan {
   case class Cell(col: Col, row: Row)
 
   type Fields = Array[FieldType]
-  type Blocks = List[Int]
+  type Blocks = Array[Int]
   type Lines = Seq[Line]
   type Table = Array[Array[FieldType]]
 }

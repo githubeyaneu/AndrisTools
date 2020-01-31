@@ -21,7 +21,7 @@ case class TableTopAndLeftBlocks(tops: Array[Blocks], lefts: Array[Blocks])
 
 trait Japan9Algorythm {
   case class ReduceLinesResult(isEmpty: Boolean, table: Table)
-  type ReduceLineResult = Try[Int]
+  type ReduceLineResult = Option[Fields]
   case class ReduceLineTimeoutResult(timeout: Boolean, result: ReduceLineResult)
   case class CandidateReduceResult(success: Boolean, table: Table)
   case class Cell(colRow: ColRow, value: FieldType)
@@ -29,25 +29,27 @@ trait Japan9Algorythm {
   type Candidate
   type Candidates
 
-  //  def solve(table: Table): Table
   def reduce(table: Table): ReduceLinesResult
-  //  def candidateReduce(tableTopAndLeftBlocks: TableTopAndLeftBlocks, table: Table): Table
-  //  def findLines(table: Table): Lines
   def reduceLines(table: Table, lines: Lines): ReduceLinesResult
-  //  def reduceLineTimeout(line: Line, timeout: Long): ReduceLineTimeoutResult
+  def reduceLineTimeout(line: Fields, timeoutMs: Long, blocks: Blocks): ReduceLineTimeoutResult
   //  def reduceLine(knownFieldsOfLine: Fields, blocks: Blocks): ReduceLineResult
   //  def candidateReduce(table: Table): CandidateReduceResult
   //  def unknownFields(table: Table): Cells
   //  def sortCellsByComplexity(cells: Cells): Cells
   //  def generateCandidates(cells: Cells): Candidates
   //  def createNewTable(table: Table, candidate: Candidate): Table
+
+  //  def candidateReduce(tableTopAndLeftBlocks: TableTopAndLeftBlocks, table: Table): Table
+  //  def findLines(table: Table): Lines
+
+  //  def solve(table: Table): Table // reduce + candidateReduce
 }
 
 trait Gui {
   def guiSetField(col: Col, row: Row, value: FieldType)
 }
 object Japan9 extends App {
-  val a = Array(Array(1,2,3), Array(4,5,6))
+  val a = Array(Array(1, 2, 3), Array(4, 5, 6))
   println(a.map(_.mkString).mkString("\r\n"))
   println
   println(a.transpose.map(_.mkString).mkString("\r\n"))
@@ -63,8 +65,8 @@ class Japan9(tableTopAndLeftBlocks: TableTopAndLeftBlocks, gui: Gui) extends Jap
 
   implicit class Table9(table: Table) {
     def fields(rowOrCol: Line) = rowOrCol.ifRowOrCol(table.transpose.apply, table.apply)
-    
-    def cells = for (col <- cols; row <- rows) yield Cell(ColRow(col, row), table(col.x)(row.y) )
+
+    def cells = for (col <- cols; row <- rows) yield Cell(ColRow(col, row), table(col.x)(row.y))
 
     def updateCell(col: Col, row: Row, newVal: FieldType): Unit = table(col.x)(row.y) = newVal
 
@@ -95,111 +97,41 @@ class Japan9(tableTopAndLeftBlocks: TableTopAndLeftBlocks, gui: Gui) extends Jap
     def reduceLinesIn(
       table:               Table,
       linesToCheck:        Lines,
-      actualReduceTimeout: Int,
-      timeouts:            scala.collection.mutable.Set[Line]): ReduceLinesResult = {
-      //    println("---")
-      //    println(actualReduceTimeout)
-      //    println("Lines to check: " + linesToCheck.mkString(" "))
-
-      val reduceResultsOptions = linesToCheck.map(reduceLineTimeout(actualReduceTimeout, table, timeouts))
+      actualReduceTimeout: Int): ReduceLinesResult = {
+      val reduceResultsOptions = linesToCheck.map(reduceLineTimeout_(actualReduceTimeout, table, scala.collection.mutable.Set(/*FIXME remove set*/)))
       val error = reduceResultsOptions.exists(_.isEmpty)
       if (error) {
-        val errorLines = linesToCheck.zip(reduceResultsOptions).filter(_._2.isEmpty).map(_._1)
-        //      println("Error: line(s) could not be reduced: " + errorLines.mkString(", "))
         ReduceLinesResult(false, table)
       } else {
         val reduceResults = reduceResultsOptions.flatten
         val changedLines = reduceResults.flatten.distinct
-        //      println
-        //      println("Changed lines:" + changedLines.mkString(" "))
         val changed = 0 < changedLines.size
 
         if (changed) {
-          reduceLinesIn(table, changedLines, actualReduceTimeout, timeouts)
-        } else if (0 < timeouts.size) {
-          reduceLinesIn(table, sortLines(timeouts.toList, table), actualReduceTimeout * 2, timeouts)
+          reduceLinesIn(table, changedLines, actualReduceTimeout/*FIXME, timeouts*/)
+        } else if (0 < 1/*FIXME timeouts.size*/) {
+          def sortLines(lines: Lines, table: Table) = lines.sorted(orderLinesByComplexity)
+          reduceLinesIn(table, null /*FIXME sortLines(timeouts.toList, table)*/, actualReduceTimeout * 2 /*FIXME , timeouts*/)
         } else {
-          //        println("done: full:" + table.fieldsAll.count(_ == Full) + ", empty:" + table.fieldsAll.count(_ == Empty) + ", unknown: " + unknown)
-          //        println("" + (System.currentTimeMillis - start) + "ms")
           ReduceLinesResult(true, table)
         }
       }
     }
 
-    def sortLines(lines: Lines, table: Table) = lines.sorted(orderLinesByComplexity)
-
-    reduceLinesIn(table, linesToCheck, 10, scala.collection.mutable.Set[Line]((rows ++ cols): _*))
+    reduceLinesIn(table, linesToCheck, 10)
   }
 
-  def candidateReduce(guiTable: Array[Array[FieldType]]): Unit = {
-    val originalTable = guiTable
-    println("candidateReduce" + originalTable.unknowns)
-    val unknownFields = originalTable.cells.filter(_.value == Unknown).map(_.colRow)
-    if (unknownFields.size == 0) println("The table is ready! Enjoy the picture")
-    else {
-      val unknownFieldsSorted = unknownFields.sorted(orderCellsByRowOrColComplexity)
-      type Candidate = Tuple2[ColRow, FieldType]
-      val candidatess: Seq[Candidate] = unknownFieldsSorted.map(cr => Seq((cr, Full), (cr, Empty))).flatten
-      println("candidatess" + candidatess.size)
-      val candiSize = (1 to candidatess.size).toList.iterator
-      val candidatesSubsets = candiSize.map(candidatess.combinations(_)).flatten
-      println("candidatesSubsets" + candidatesSubsets)
-      // FIXME: filter same field with Full or empty is not possible!!!
-      val candidatesSubsetsIterator = candidatesSubsets
-
-      var done = false
-      var candidateIndex = 0
-      while (!done && candidatesSubsetsIterator.hasNext) {
-        val candidates = candidatesSubsetsIterator.next
-        //        println("Candidate:" + candidate)
-        val newTable = originalTable.clone
-
-        for (candidate <- candidates) newTable.updateCell(candidate._1, candidate._2)
-
-        for (col <- cols; row <- rows) gui.guiSetField(col, row, newTable(col.x)(row.y))
-
-        val timeouts = scala.collection.mutable.Set[Line]((rows ++ cols): _*)
-        val reduceResult = reduce(newTable)
-        if (reduceResult.isEmpty) {
-          println("candidate " + candidates + " GOOD the blocks are bad, the reduce was not able to run without error")
-          //          println("set candidate inverted: "+candidate)
-          done = true
-          val nextTable = originalTable.clone
-          for (candidate <- candidates) nextTable.updateCell(candidate._1, if (candidate._2 == Full) Empty else Full)
-          for (col <- cols; row <- rows) gui.guiSetField(col, row, nextTable(col.x)(row.y))
-          // this is good! // FIXME: for one field it is good. for two???? think
-          val timeouts = scala.collection.mutable.Set[Line]((rows ++ cols): _*)
-          val reduceResult = reduce(nextTable)
-          val unknown = reduceResult.table.unknowns
-          if (unknown == 0) println("After candidate " + candidates + " the table is ready! Enjoy the picture")
-          else candidateReduce(nextTable)
-        } else {
-          val unknown = reduceResult.table.unknowns
-          if (unknown == 0) {
-            println("  After candidate " + candidates + " the table is ready! Enjoy the picture")
-            done = true
-          } else {
-            //println("  After candidate " + candidate + " no error -> dont know if good or bad. try next.")
-            candidateIndex = candidateIndex + 1
-            print(".")
-            if (candidateIndex % 100 == 0) println
-          }
-        }
-      }
-    }
-  }
-
-  def reduceLineTimeout(timeoutMs: Int, table: Table, timeouts: scala.collection.mutable.Set[Line])(rowOrCol: Line): Option[Lines] = {
+  def reduceLineTimeout_(timeoutMs: Long, table: Table, timeouts: scala.collection.mutable.Set[Line])(rowOrCol: Line): Option[Lines] = {
     val olds = table.fields(rowOrCol)
-    val cancelled$ = BehaviorSubject(false)
-    val reduceResultTimeout = ThreadPlus.runBlockingWithTimeout(timeoutMs, reduceLine(olds, blocks(rowOrCol).toArray, cancelled$), cancelled$.onNext(true))
 
-    val changed = if (reduceResultTimeout.isEmpty) {
+    val reduceResultTimeout = reduceLineTimeout(olds, timeoutMs, blocks(rowOrCol))
+
+    val changed = if (reduceResultTimeout.timeout) {
       timeouts.add(rowOrCol)
       Option(Seq()) // no changed row or col
     } else {
       timeouts.remove(rowOrCol)
-      val reduceResult = reduceResultTimeout.get
+      val reduceResult = reduceResultTimeout.result
       if (reduceResult.isEmpty) None // this indicates that there is an error with the table, cannot reduced properly
       else {
         val reducedFields = reduceResult.get
@@ -226,6 +158,13 @@ class Japan9(tableTopAndLeftBlocks: TableTopAndLeftBlocks, gui: Gui) extends Jap
 
     //print(rowOrCol + " " + (if (changed.size > 0) changed.size else if (reduceResultTimeout.nonEmpty) "." else ""))
     changed
+  }
+
+  def reduceLineTimeout(line: Fields, timeoutMs: Long, blocks: Blocks): ReduceLineTimeoutResult = {
+    val cancelled$ = BehaviorSubject(false)
+    val timeoutedResult = ThreadPlus.runBlockingWithTimeout(timeoutMs, reduceLine(line, blocks, cancelled$), cancelled$.onNext(true))
+    if (timeoutedResult.isEmpty) ReduceLineTimeoutResult(true, None)
+    else ReduceLineTimeoutResult(false, timeoutedResult.get)
   }
 
   private def blocks(rowOrCol: Line): Blocks = rowOrCol match {
@@ -336,6 +275,64 @@ class Japan9(tableTopAndLeftBlocks: TableTopAndLeftBlocks, gui: Gui) extends Jap
     generatePossibleFields(reducePossibleFieldsCallback)
 
     if (possibleFieldsCounter == 0) None else Option(cumulated)
+  }
+
+  def candidateReduce(guiTable: Array[Array[FieldType]]): Unit = {
+    val originalTable = guiTable
+    println("candidateReduce" + originalTable.unknowns)
+    val unknownFields = originalTable.cells.filter(_.value == Unknown).map(_.colRow)
+    if (unknownFields.size == 0) println("The table is ready! Enjoy the picture")
+    else {
+      val unknownFieldsSorted = unknownFields.sorted(orderCellsByRowOrColComplexity)
+      type Candidate = Tuple2[ColRow, FieldType]
+      val candidatess: Seq[Candidate] = unknownFieldsSorted.map(cr => Seq((cr, Full), (cr, Empty))).flatten
+      println("candidatess" + candidatess.size)
+      val candiSize = (1 to candidatess.size).toList.iterator
+      val candidatesSubsets = candiSize.map(candidatess.combinations(_)).flatten
+      println("candidatesSubsets" + candidatesSubsets)
+      // FIXME: filter same field with Full or empty is not possible!!!
+      val candidatesSubsetsIterator = candidatesSubsets
+
+      var done = false
+      var candidateIndex = 0
+      while (!done && candidatesSubsetsIterator.hasNext) {
+        val candidates = candidatesSubsetsIterator.next
+        //        println("Candidate:" + candidate)
+        val newTable = originalTable.clone
+
+        for (candidate <- candidates) newTable.updateCell(candidate._1, candidate._2)
+
+        for (col <- cols; row <- rows) gui.guiSetField(col, row, newTable(col.x)(row.y))
+
+        val timeouts = scala.collection.mutable.Set[Line]((rows ++ cols): _*)
+        val reduceResult = reduce(newTable)
+        if (reduceResult.isEmpty) {
+          println("candidate " + candidates + " GOOD the blocks are bad, the reduce was not able to run without error")
+          //          println("set candidate inverted: "+candidate)
+          done = true
+          val nextTable = originalTable.clone
+          for (candidate <- candidates) nextTable.updateCell(candidate._1, if (candidate._2 == Full) Empty else Full)
+          for (col <- cols; row <- rows) gui.guiSetField(col, row, nextTable(col.x)(row.y))
+          // this is good! // FIXME: for one field it is good. for two???? think
+          val timeouts = scala.collection.mutable.Set[Line]((rows ++ cols): _*)
+          val reduceResult = reduce(nextTable)
+          val unknown = reduceResult.table.unknowns
+          if (unknown == 0) println("After candidate " + candidates + " the table is ready! Enjoy the picture")
+          else candidateReduce(nextTable)
+        } else {
+          val unknown = reduceResult.table.unknowns
+          if (unknown == 0) {
+            println("  After candidate " + candidates + " the table is ready! Enjoy the picture")
+            done = true
+          } else {
+            //println("  After candidate " + candidate + " no error -> dont know if good or bad. try next.")
+            candidateIndex = candidateIndex + 1
+            print(".")
+            if (candidateIndex % 100 == 0) println
+          }
+        }
+      }
+    }
   }
 }
 

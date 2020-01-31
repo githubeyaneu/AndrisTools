@@ -3,3 +3,5 @@
 /.cache-tests
 /.cache-main
 /.project
+.idea
+.worksheet

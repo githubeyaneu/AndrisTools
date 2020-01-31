@@ -31,7 +31,7 @@ object JapanGui extends App {
 
   def createTableFromFile(file: String) = {
     val lines = file.linesFromFile.map(_.trim).toList
-    val sides = lines.map(_.split("[\t ]").toList.map(_.toInt)).span(!_.contains(888))
+    val sides = lines.map(_.split("[\t ]").map(_.toInt)).span(!_.contains(888))
     val lefts = sides._1
     val ups = sides._2.tail
     println((lefts.flatten.sum, ups.flatten.sum))
