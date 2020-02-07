@@ -56,7 +56,6 @@ object FileLister3 extends App {
 
   val TITLE = "File Lister"
 
-  val panel = JPanelBuilder().withBorders.withSeparators.newColumn.newColumnFPG
 
   val targetText = BehaviorSubject[String]
   val daysText = BehaviorSubject[String]
@@ -65,7 +64,7 @@ object FileLister3 extends App {
   val isWorkInProgress = BehaviorSubject(false)
   val counter = BehaviorSubject[Int]
 
-  panel
+  val panel = JPanelBuilder().withBorders.withSeparators.newColumn.newColumnFPG
     .newRow.addLabel.text("Target file:")
     .nextColumn.addTextField.text("C:\\temp\\AllDrivesFileList.txt").onTextChanged(targetText).remember("targetPath")
 
@@ -82,6 +81,7 @@ object FileLister3 extends App {
     .nextColumn.addButton.text("Start to list.").onAction(startButton).enabled(isWorkInProgress.negate)
 
     .newRow.addLabel.text("Count").text(counter.map(_.toString))
+    .getPanel
 
   val frame = new JFrame().title(TITLE).onCloseHide.iconFromChar('L', Color.CYAN).addToSystemTray().withComponent(panel)
     .menuItem("File", "Exit", System.exit(0))
