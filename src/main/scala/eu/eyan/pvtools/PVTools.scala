@@ -61,6 +61,8 @@ Process start = pb.start();
 
    * */
 
+  //TODO Include deshake at least for resized!!
+
 /***************************  UI  ***************************************************/
 
   private val TITLE = "Photo and video import"
@@ -207,7 +209,7 @@ Process start = pb.start();
   checkToImportClicked.takeLatestOf(params$).subscribe(params => execute(checkFilesToImport(params)))
   importClicked.takeLatestOf(params$).subscribe(params => execute(importFiles(params)))
 
-  filesToResize.combineLatest(params$).subscribe(filesParams => execute(filesParams._1.foreach(resizeFile(filesParams._2.ffmpegPathTextField, filesParams._2.ffprobePathTextField))))
+  filesToResize.combineLatest(params$).subscribe(filesParams => execute(filesParams._1.foreach(resizeFile(720, filesParams._2.ffmpegPathTextField, filesParams._2.ffprobePathTextField))))
 
   def rotateFiles(rotate: Int)(filesFfmgep: (List[File], String)) = execute(filesFfmgep._1.foreach(rotateFile(filesFfmgep._2, rotate)))
   filesToRotate0.combineLatest(ffmpegPathTextField).subscribe(rotateFiles(0)(_))
@@ -332,8 +334,7 @@ Process start = pb.start();
                   val resizeTargetFileName = targetFile.addSubDir("resized")
                   Log.info("Resize video " + fileToImport + " to " + resizeTargetFileName)
 
-                  //val res = resizeVideoToMp4(fileToImport, resizeTargetFileName)
-                  val res = resizeFile(params.ffmpegPathTextField, params.ffprobePathTextField, fileToImport, resizeTargetFileName)
+                  val res = resizeFile(720, params.ffmpegPathTextField, params.ffprobePathTextField, fileToImport, resizeTargetFileName)
                   resizeTargetFileName.setLastModified(fileToImport.lastModified)
                   println("Importt " + fileToImport)
                   //Files.setAttribute(resizeTargetFileName.toPath, "creationTime", FileTime.from(fileToImport.creationTime))
@@ -345,6 +346,18 @@ Process start = pb.start();
                   //                  println("---")
                   res
                 }, (e: Throwable) => println("Resizing error: " + e.getMessage))
+              } else if (isImageToResize("jpg,JPG,jpeg,JPEG")(fileToImport)) {
+                println("resize image")
+                val resizeRes = TryCatch({
+                  val resizeTargetFileName = targetFile.addSubDir("resized")
+                  Log.info("Resize image " + fileToImport + " to " + resizeTargetFileName)
+
+                  val res = resizeImage(params.ffmpegPathTextField, 1080, fileToImport, resizeTargetFileName)
+                  resizeTargetFileName.setLastModified(fileToImport.lastModified)
+                  //Files.setAttribute(resizeTargetFileName.toPath, "creationTime", FileTime.from(fileToImport.creationTime))
+                  println("resize image " + res)
+                  res
+                }, (e: Throwable) => println("Resizing error: " + e.getMessage))
               } else println("Not to resize " + fileToImport)
 
               println("forward " + fileToImport)
@@ -352,7 +365,16 @@ Process start = pb.start();
               if (isVideoToConvert(params.extensionsToConvertTextField)(fileToImport)) {
                 Log.info("Convert video " + fileToImport + " to " + targetFile)
 
-                val res = ffmpeg(params.ffmpegPathTextField, fileToImport, targetFile, " -vf yadif -vcodec mpeg4 -b:v 17M -acodec libmp3lame -b:a 192k -y ", convertActualBytesToProgress)
+                val res = runFFMpeg(
+                  params.ffmpegPathTextField,
+                  fileToImport,
+                  targetFile,
+                  convertActualBytesToProgress,
+                  FFMpegParam.VF_YADIF,
+                  FFMpegParam.VCODEC_MPEG4,
+                  FFMpegParam.BITRATE_VIDEO_17M,
+                  FFMpegParam.AUDIO_CODEC_MP3,
+                  FFMpegParam.BITRATE_AUDIO_192K)
                 targetFile.setLastModified(fileToImport.lastModified)
                 Files.setAttribute(targetFile.toPath, "creationTime", FileTime.from(fileToImport.creationTime))
 
@@ -442,6 +464,7 @@ Process start = pb.start();
   private def isVideoToConvert(extensionsToConvert: String)(file: File) = this.synchronized { file.endsWith(extensionsToConvert.split(","): _*) }
 
   private def isVideoToResize(extensionsToResize: String)(file: File) = file.endsWith(extensionsToResize.split(","): _*)
+  private def isImageToResize(extensionsToResize: String)(file: File) = file.endsWith(extensionsToResize.split(","): _*)
 
   private def alreadyImportedFile(exportPath: String) = (exportPath + "\\alreadyImported.txt").asFile
   private def alreadyImportedFiles(exportPath: String) = alreadyImportedFile(exportPath).lift.map(_.linesList.map(_.asFile)).getOrElse(List())
@@ -473,8 +496,17 @@ Process start = pb.start();
     }
   }
 
-  private def resizeFile(ffmpegPath: String, ffprobePath: String)(inFile: File): Unit = resizeFile(ffmpegPath, ffprobePath, inFile, inFile.addSubDir("resized"))
-  private def resizeFile(ffmpegPath: String, ffprobePath: String, inFile: File, outFile: File): Unit = {
+  private def resizeImage(ffmpegPath: String, height: Int, inFile: File, outFile: File): Unit = {
+    // -vf "scale='min(320,iw)':'min(240,ih)'" input_not_upscaled.png
+    val in = inFile.getAbsolutePath
+    val out = outFile.getAbsolutePath
+    val resizeCmd = s"""$ffmpegPath  -i "$in" -vf scale=-1:'min($height,ih)' "$out" """
+    val resizeRes = resizeCmd.executeAsProcess
+    println(inFile + resizeRes)
+  }
+
+  private def resizeFile(height: Int, ffmpegPath: String, ffprobePath: String)(inFile: File): Unit = resizeFile(height, ffmpegPath, ffprobePath, inFile, inFile.addSubDir("resized"))
+  private def resizeFile(height: Int, ffmpegPath: String, ffprobePath: String, inFile: File, outFile: File): Unit = {
     Log.info(inFile);
     val sizeCmd = ffprobePath + s""" -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "${inFile.getAbsolutePath}" """
 
@@ -497,8 +529,8 @@ Process start = pb.start();
     val dividers = List(1) ++ (dividerCombinations.map(_.product))
     val dividedResolutions = dividers.map(divider => (resolution._1 / divider, resolution._2 / divider))
     val evenDividedResolutions = dividedResolutions.filter(wh => wh._1 % 2 == 0 && wh._2 % 2 == 0)
-    val resolutionClosestTo720 = evenDividedResolutions.sortBy(wh => (wh._2 - 720).abs)
-    val resizeHeight = resolutionClosestTo720.lift(0).map(_._2)
+    val resolutionClosestToHeight = evenDividedResolutions.sortBy(wh => (wh._2 - height).abs)
+    val resizeHeight = resolutionClosestToHeight.lift(0).map(_._2)
 
     //    log("Size of file " + inFile)
     //    log((video_rotate.toInt, resolution))
@@ -513,40 +545,54 @@ Process start = pb.start();
 
     if (resizeHeight.isEmpty) log("not possible to resize " + resolution)
     else {
-      val in = inFile.getAbsolutePath
-      val out = outFile.getAbsolutePath
       val height = resizeHeight.get
-      val resizeCmd = ffmpegPath + s"""  -i "$in" -vf scale=-1:$height -c:v libx264 -crf 18 -preset veryslow -y -c:a copy "$out" """
-      val resizeRes = resizeCmd.executeAsProcess
-      println(inFile + resizeRes)
+      log("Resize height=" + height + " " + inFile + " to " + outFile)
+      log("Resize exit code: " + runFFMpeg(ffmpegPath, inFile, outFile, dontcare => {}, FFMpegParam.SCALE_HEIGHT(height),
+        FFMpegParam.CODEC_VIDEO_LIBX264,
+        FFMpegParam.CONSTANT_RATE_FACTOR_VISUALLY_LOSSLESS,
+        FFMpegParam.PRESET_MEDIUM,
+        FFMpegParam.CODEC_AUDIO_COPY))
     }
     log("---Done---")
   }
 
   private def rotateFile(ffmpegPath: String, transpose: Int)(inFile: File): Unit = {
-    val in = inFile.getAbsolutePath
     val out = inFile.extendFileNameWith("_r" + transpose.toString)
     log("Rotate " + transpose + " " + inFile + " " + out)
-    val rotateCmd = ffmpegPath + s"""  -i "$in" -vf "transpose=$transpose" -y "$out" """
-    val rotateRes = rotateCmd.executeAsProcess
-    log(rotateRes)
+    log("Rotate exit code: " + runFFMpeg(ffmpegPath, inFile, out, dontcare => {}, FFMpegParam.TRANSPOSE(transpose)))
   }
 
-  private def resizeVideoToMp4(ffmpegPath: String, in: File, out: File) = {
-    val height = 960
-    val outFile = out.extendFileNameWith("" + height)
-    Log.info("Resizing " + in + " to " + outFile)
-    val convertBat = s"""${ffmpegPath} -i "$in" -vf scale=-1:960 -c:v libx264 -crf 18 -preset veryslow -y -c:a copy "$outFile""""
-    val processResult = convertBat.executeAsProcessWithResult
-    Log.info("Resizing exitCode=" + processResult.exitValue)
-    processResult
-  }
-
-  private def ffmpeg(ffmpegPath: String, in: File, out: File, parameters: String, bytesDoneProgress: Long => Unit): Int = {
+  private def runFFMpeg(ffmpegPath: String, in: File, out: File, bytesDoneProgress: Long => Unit, params: FFMpegParam*): Int = {
+    val parameters = params.map(_.param).mkString(" ")
     val cmd = s""" $ffmpegPath -i "$in" $parameters -y "$out" """
     Log.info("Executing " + cmd)
-    val exitCode = cmd.executeAsProcessWithResultAndOutputLineCallback(s => s.findGroup("size= *(\\d*)kB".r).foreach(kB => bytesDoneProgress(kB.toLong * 1024)))
+    val exitCode = cmd.executeAsProcessWithResultAndOutputLineCallback(s => {
+      println(s)
+      s.findGroup("size= *(\\d*)kB".r).foreach(kB => bytesDoneProgress(kB.toLong * 1024))
+    })
     Log.info("ExitCode=" + exitCode)
     exitCode
   }
+
+  object FFMpegParam {
+    def VCODEC_MPEG4 = FFMpegParam("-vcodec mpeg4")
+
+    def BITRATE_VIDEO_17M = FFMpegParam("-b:v 17M")
+    def BITRATE_AUDIO_192K = FFMpegParam("-b:a 192k")
+    
+    def AUDIO_CODEC_MP3 = FFMpegParam("-acodec libmp3lame")
+    
+    def CONSTANT_RATE_FACTOR_VISUALLY_LOSSLESS = FFMpegParam("-crf 18")
+    def PRESET_MEDIUM = FFMpegParam("-preset medium")
+    
+    def CODEC_VIDEO_LIBX264 = FFMpegParam("-c:v libx264")
+    def CODEC_AUDIO_COPY = FFMpegParam("-c:a copy")
+    
+    def VF_YADIF = FFMpegParam("-vf yadif")
+    def TRANSPOSE(transpose: Int) = FFMpegParam(s"""-vf "transpose=$transpose" """)
+    def SCALE_HEIGHT(height: Int) = FFMpegParam(s""" -vf scale=-1:$height """)
+    def DESHAKE = FFMpegParam(s""" -vf deshake """)
+  }
+  case class FFMpegParam(param: String)
+
 }
