@@ -68,10 +68,11 @@ Process start = pb.start();
   private val inProgress = BehaviorSubject(false)
   private val enabledState = inProgress.not
 
+  private val importPathClicked = BehaviorSubject[String]()
   private val importPathTexts = BehaviorSubject[List[String]]()
 
-  private val exportPathTextField = BehaviorSubject[String]()
   private val exportPathClicked = BehaviorSubject[String]()
+  private val exportPathTextField = BehaviorSubject[String]()
 
   private val tempPathTextField = BehaviorSubject[String]()
   private val tempPathClicked = BehaviorSubject[String]()
@@ -111,7 +112,7 @@ Process start = pb.start();
   private val panel = JPanelBuilder().withBorders.withSeparators
     .newColumn.newColumnFPG
 
-    .newRow("f:p").addLabel.text("Import path: ")
+    .newRow("f:p").addLabel.text("Import path: ").cursor_HAND_CURSOR.onMouseClicked(importPathClicked)
     .nextColumn.addTextFieldMulti("importPathTextField", 30).setValues(List()).remember("importPathTextFields").onChanged(importPathTexts)
 
     .newRow.addLabel.text("Export path: ").cursor_HAND_CURSOR.onMouseClicked(exportPathClicked)
@@ -201,6 +202,7 @@ Process start = pb.start();
 
   importPathTexts.subscribe(v => frame.resizeAndBack) // this resizeAndBack should be handled better! in the multi class
 
+  importPathClicked.takeLatestOf(importPathTexts).subscribe(_.foreach(_.openAsFile))
   exportPathClicked.takeLatestOf(exportPathTextField).subscribe(_.openAsFile)
   tempPathClicked.takeLatestOf(tempPathTextField).subscribe(_.openAsFile)
 
@@ -400,7 +402,7 @@ Process start = pb.start();
   private def checkFilesToImport(params: Params): List[File] = {
     logArea.onNext("")
     Log.info("Checking files to import")
-    if (params.importPathTexts.size < 1) { alert("At least on import dir please."); List() }
+    if (params.importPathTexts.size < 1) { alert("Set at least one import dir please."); List() }
     else if (!params.importPathTexts.map(_.asDir.existsAndDir).forall(d2 => d2)) { alert("One of the import dirs does not exists."); List() }
     else if (!params.exportPathTextField.asDir.existsAndDir) { alert("Export dir does not exists."); List() }
     else if (!params.tempPathTextField.asDir.existsAndDir) { alert("Temp dir does not exists."); List() }
