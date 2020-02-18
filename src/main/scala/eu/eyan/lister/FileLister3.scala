@@ -56,7 +56,6 @@ object FileLister3 extends App {
 
   val TITLE = "File Lister"
 
-  val panel = JPanelBuilder().withBorders.withSeparators.newColumn.newColumnFPG
 
   val targetText = BehaviorSubject[String]
   val daysText = BehaviorSubject[String]
@@ -65,23 +64,24 @@ object FileLister3 extends App {
   val isWorkInProgress = BehaviorSubject(false)
   val counter = BehaviorSubject[Int]
 
-  panel
+  val panel = JPanelBuilder().withBorders.withSeparators.newColumn.newColumnFPG
     .newRow.addLabel.text("Target file:")
-    .nextColumn.addTextField.text("C:\\temp\\AllDrivesFileList.txt").onTextChanged(targetText.onNext).rememberInRegistry("targetPath")
+    .nextColumn.addTextField.text("C:\\temp\\AllDrivesFileList.txt").onTextChanged(targetText).remember("targetPath")
 
     .newRow.addLabel.text("Look into compressed files:")
-    .nextColumn.addCheckBox.text("").selected(false).onSelectionChanged(selected => {}).rememberInRegistry("lookIntoCompressedFiles")
+    .nextColumn.addCheckBox.text("").selected(false).onSelectionChanged(selected => {}).remember("lookIntoCompressedFiles")
 
     .newRow.addLabel.text("Execute after every x day:")
-    .nextColumn.addTextField.text("7").onTextChanged(daysText.onNext).rememberInRegistry("days")
+    .nextColumn.addTextField.text("7").onTextChanged(daysText).remember("days")
 
     .newRow.addLabel.text("Ignore if contains:")
-    .nextColumn.addTextField.text("I:,N:,P:,T:,Y:").onTextChanged(ignoreText.onNext).rememberInRegistry("ignore")
+    .nextColumn.addTextField.text("I:,N:,P:,T:,Y:").onTextChanged(ignoreText).remember("ignore")
 
     .newRow.addLabel.text("Start to list:")
-    .nextColumn.addButton.text("Start to list.").onAction(startButton.onNext).enabled(isWorkInProgress.negate)
+    .nextColumn.addButton.text("Start to list.").onAction(startButton).enabled(isWorkInProgress.negate)
 
     .newRow.addLabel.text("Count").text(counter.map(_.toString))
+    .getPanel
 
   val frame = new JFrame().title(TITLE).onCloseHide.iconFromChar('L', Color.CYAN).addToSystemTray().withComponent(panel)
     .menuItem("File", "Exit", System.exit(0))
