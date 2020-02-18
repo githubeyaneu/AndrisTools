@@ -63,6 +63,9 @@ Process start = pb.start();
    * */
 
   //TODO Include deshake at least for resized!!
+  
+  // TODO: crop ffmpeg -i in.mp4 -filter:v "crop=out_w:out_h:x:y" out.mp4
+  // TODO: cut ffmpeg -ss 00:00:30 -i orginalfile -t 00:00:05 -vcodec copy -acodec copy newfile
 
 /***************************  UI  ***************************************************/
 
