@@ -50,7 +50,7 @@ import eu.eyan.pvtools.FFMPegPlus._
  */
 object PVTools extends App {
   Log.activateInfoLevel
-  LogWindow.redirectSystemOutAndErrToLogWindow
+  // TODO LogWindow.redirectSystemOutAndErrToLogWindow
 
   /*
    * TODO low prio ffmpeg:_
@@ -256,7 +256,7 @@ Process start = pb.start();
       Log.trace("progressBytes " + (bytes * 100 / filesToImportSizeSum))
     }
 
-    val importResults = files /* FIXME .par*/ .map(file => importFile(params, fileProgress(file))(file)).toList.sortBy(_._2)
+    val importResults = files /* .par FIXME */ .map(file => importFile(params, fileProgress(file))(file)).toList.sortBy(_._2)
     val importSuccessful = importResults.filter(_._1.isEmpty)
     val importFailed = importResults.filter(_._1.nonEmpty)
 
@@ -264,7 +264,7 @@ Process start = pb.start();
     log("NOT Imported files:\n" + importFailed.mkString("\n") + ".")
 
     val newList = alreadyImportedFiles(params.exportPathTextField) ++ importSuccessful.map(_._2)
-    newList.mkStringNL.writeToFile(alreadyImportedFile(params.exportPathTextField))
+    newList.mkStringNL.writeToFileUtf8(alreadyImportedFile(params.exportPathTextField).toString)
 
     importLabel.onNext("Import finished")
     progressBarFinished onNext "finished"
@@ -448,7 +448,13 @@ Process start = pb.start();
 
       Log.trace("allFiles\r\n" + allFilesToImport.mkStringNL)
       Log.trace("\r\nalreadyImportedFiles\r\n" + alreadyImportedFiles(params.exportPathTextField).mkStringNL)
-      val filesToImport = if (params.useAlreadyImported) allFilesToImport.diff(alreadyImportedFiles(params.exportPathTextField)) else allFilesToImport
+      val filesToImport = if (params.useAlreadyImported) {
+//        println("allFilesToImport", allFilesToImport)
+//        println("alreadyImportedFiles", alreadyImportedFiles(params.exportPathTextField))
+//        println("diff", allFilesToImport.diff(alreadyImportedFiles(params.exportPathTextField)))
+        allFilesToImport.diff(alreadyImportedFiles(params.exportPathTextField)) 
+      }
+      else allFilesToImport
       Log.trace("filesToImport " + filesToImport.mkStringNL)
       val filesToImportSizeSum = filesToImport.map(_.length).sum
 
@@ -471,7 +477,7 @@ Process start = pb.start();
   private def isImageToResize(extensionsToResize: String)(file: File) = file.endsWith(extensionsToResize.split(","): _*)
 
   private def alreadyImportedFile(exportPath: String) = (exportPath + "\\alreadyImported.txt").asFile
-  private def alreadyImportedFiles(exportPath: String) = alreadyImportedFile(exportPath).lift.map(_.linesList.map(_.asFile)).getOrElse(List())
+  private def alreadyImportedFiles(exportPath: String) = alreadyImportedFile(exportPath).lift.map(_.linesListUtf8.map(_.asFile)).getOrElse(List())
 
   private def alert(msg: String) = JOptionPane.showMessageDialog(null, msg)
 
