@@ -11,9 +11,10 @@ object FFMPegPlus {
     val ffmpeg = s"""$ffmpegPath"""
     val mini = "-i"
     val inn = s""""$in""""
+    val nostdin = "-nostdin"
     val miny = "-y"
     val outt = s""""$out""""
-    val cmd = List(ffmpeg, mini, inn) ++ parameters ++ List(miny, outt)
+    val cmd = List(ffmpeg, mini, inn, nostdin) ++ parameters ++ List(miny, outt)
     Log.info("Executing " + cmd)
     
     def computeProgress(s:String):Unit = {

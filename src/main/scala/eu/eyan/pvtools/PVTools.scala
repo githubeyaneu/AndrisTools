@@ -41,6 +41,7 @@ import eu.eyan.util.rx.lang.scala.subjects.BehaviorSubjectPlus.BehaviorSubjectIm
 import rx.lang.scala.Observable
 import eu.eyan.util.rx.lang.scala.ObservablePlus.ObservableImplicitT
 import eu.eyan.pvtools.FFMPegPlus._
+import eu.eyan.util.wip.Jobs
 
 /**
  * TODO: konfig másodperc -> change, dont react immediately
@@ -71,8 +72,8 @@ Process start = pb.start();
 
   private val TITLE = "Photo and video import"
 
-  private val inProgress = BehaviorSubject(false)
-  private val enabledState = inProgress.not
+  private val jobs = Jobs()
+  private val enabledState = jobs.workInProgress.not
 
   private val importPathClicked = BehaviorSubject[String]()
   private val importPathTexts = BehaviorSubject[List[String]]()
@@ -215,7 +216,7 @@ Process start = pb.start();
   checkToImportClicked.takeLatestOf(params$).subscribe(params => execute(checkFilesToImport(params)))
   importClicked.takeLatestOf(params$).subscribe(params => execute(importFiles(params)))
 
-  filesToResize.combineLatest(params$).subscribe(filesParams => execute(filesParams._1.foreach(resizeFile(720, filesParams._2.ffmpegPathTextField, filesParams._2.ffprobePathTextField))))
+  filesToResize.combineLatest(params$).subscribe(filesParams => execute(filesParams._1.foreach(resizeFile(720, filesParams._2.ffmpegPathTextField, filesParams._2.ffprobePathTextField, long => {/*TODO*/}))))
 
   def rotateFiles(rotate: Int)(filesFfmgep: (List[File], String)) = execute(filesFfmgep._1.foreach(rotateFile(filesFfmgep._2, rotate, l=>{})))
   filesToRotate0.combineLatest(ffmpegPathTextField).subscribe(rotateFiles(0)(_))
@@ -223,8 +224,7 @@ Process start = pb.start();
   filesToRotate2.combineLatest(ffmpegPathTextField).subscribe(rotateFiles(2)(_))
   filesToRotate3.combineLatest(ffmpegPathTextField).subscribe(rotateFiles(3)(_))
 
-  //TODO refactor this is bad design. instead create an array and as long array is not empty then in progress....
-  private def execute(action: => Unit) = { inProgress.onNext(true); SwingPlus.runInWorker(action, inProgress.onNext(false)) }
+  private def execute(action: => Unit) = SwingPlus.runInWorker(jobs.run{action}) 
 
   private def importFiles(params: Params) = {
     def now = System.currentTimeMillis
@@ -340,7 +340,7 @@ Process start = pb.start();
                   val resizeTargetFileName = targetFile.addSubDir("resized")
                   log("Resize video " + fileToImport + " to " + resizeTargetFileName)
 
-                  val res = resizeFile(720, params.ffmpegPathTextField, params.ffprobePathTextField, fileToImport, resizeTargetFileName)
+                  val res = resizeFile(720, params.ffmpegPathTextField, params.ffprobePathTextField, fileToImport, resizeTargetFileName, convertActualBytesToProgress)
                   resizeTargetFileName.setLastModified(fileToImport.lastModified)
                   println("Importt " + fileToImport)
                   //Files.setAttribute(resizeTargetFileName.toPath, "creationTime", FileTime.from(fileToImport.creationTime))
@@ -379,6 +379,7 @@ Process start = pb.start();
                   FFMpegParam.BITRATE_VIDEO_17M,
                   FFMpegParam.AUDIO_CODEC_MP3,
                   FFMpegParam.BITRATE_AUDIO_192K)
+                  
                 targetFile.setLastModified(fileToImport.lastModified)
                 Files.setAttribute(targetFile.toPath, "creationTime", FileTime.from(fileToImport.creationTime))
 
@@ -466,7 +467,10 @@ Process start = pb.start();
     }
   }
 
-  private def log(txt: Any) = logAreaAppender.onNext(txt + "\n")
+  private def log(txt: Any) = {
+    Log.info("LOG "+txt)
+    logAreaAppender.onNext(txt + "\n")
+  }
 
   private def writeEmail() =
     Desktop.getDesktop.mail(new URI("mailto:PVTools@eyan.eu?subject=Photo%20and%20video%20import&body=" + URLEncoder.encode(LogWindow.getAllLogs, "utf-8").replace("+", "%20")))
@@ -506,8 +510,8 @@ Process start = pb.start();
     }
   }
 
-  private def resizeFile(height: Int, ffmpegPath: String, ffprobePath: String)(inFile: File): Unit = resizeFile(height, ffmpegPath, ffprobePath, inFile, inFile.addSubDir("resized"))
-  private def resizeFile(height: Int, ffmpegPath: String, ffprobePath: String, inFile: File, outFile: File): Unit = {
+  private def resizeFile(height: Int, ffmpegPath: String, ffprobePath: String, progress: Long=>Unit)(inFile: File): Unit = resizeFile(height, ffmpegPath, ffprobePath, inFile, inFile.addSubDir("resized"), progress)
+  private def resizeFile(height: Int, ffmpegPath: String, ffprobePath: String, inFile: File, outFile: File, progress: Long=>Unit): Unit = {
     Log.info(inFile);
     val sizeCmd = ffprobePath + s""" -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "${inFile.getAbsolutePath}" """
 
@@ -548,7 +552,7 @@ Process start = pb.start();
     else {
       val height = resizeHeight.get
       log("Resize height=" + height + " " + inFile + " to " + outFile)
-      log("Resize exit code: " + runFFMpeg(ffmpegPath, inFile, outFile, dontcare => {}, FFMpegParam.SCALE_HEIGHT(height),
+      log("Resize exit code: " + runFFMpeg(ffmpegPath, inFile, outFile, progress, FFMpegParam.SCALE_HEIGHT(height),
         FFMpegParam.CODEC_VIDEO_LIBX264,
         FFMpegParam.CONSTANT_RATE_FACTOR_VISUALLY_LOSSLESS,
         FFMpegParam.PRESET_MEDIUM,
