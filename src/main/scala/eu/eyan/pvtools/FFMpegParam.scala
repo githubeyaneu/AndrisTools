@@ -16,12 +16,10 @@ object FFMPegPlus {
     val outt = s""""$out""""
     val cmd = List(ffmpeg, mini, inn, nostdin) ++ parameters ++ List(miny, outt)
     Log.info("Executing " + cmd)
-    
-    def computeProgress(s:String):Unit = {
-      println(s)
-      s.findGroup("size= *(\\d*)kB".r).foreach(kB => bytesDoneProgress(kB.toLong * 1024))
-    }
-    val exitCode = RuntimePlus.execAndProcessOutputs(cmd, computeProgress(_), computeProgress(_))
+
+    def computeProgress(s: String): String = { s.findGroup("size= *(\\d*)kB".r).foreach(kB => bytesDoneProgress(kB.toLong * 1024)); s }
+
+    val exitCode = RuntimePlus.execAndProcessOutputs(cmd, computeProgress(_).println: Unit, computeProgress(_).printlnErr: Unit)
     Log.info("ExitCode=" + exitCode)
     exitCode
   }
@@ -40,14 +38,23 @@ object FFMpegParam {
   def PRESET_MEDIUM = FFMpegParam("-preset", "medium")
 
   def CODEC_VIDEO_LIBX264 = FFMpegParam("-c:v", "libx264")
-  def CODEC_AUDIO_COPY = FFMpegParam("-c:a", "copy")
 
-  def VF_YADIF = FFMpegParam("-vf", "yadif")
-  def TRANSPOSE(transpose: Int) = FFMpegParam("-vf", s""""transpose=$transpose"""")
-  def SCALE_HEIGHT(height: Int) = FFMpegParam("-vf", s"""scale=-1:$height""")
-  def SCALE_HEIGHT_NOOVERSIZE(height: Int) = FFMpegParam("-vf", s"""scale=-1:'min($height,ih)'""")
-  def DESHAKE = FFMpegParam("-vf",s"""deshake""")
-}
-case class FFMpegParam(param: String*){
+  def CUT(from: String, to:String) = FFMpegParam("-ss", from, "-t", to)
+  def CODEC_AUDIO_COPY = FFMpegParam("-vcodec", "copy")
+  def CODEC_VIDEO_COPY = FFMpegParam("-acodec", "copy")
   
+  def CROP(x:Int,y:Int,w:Int,h:Int) = FFMpegParam("-filter:v", s""""crop=$w:$h:$x:$y"""")
+
+  def VF(videoParams: FFMpegVideoParam*) = FFMpegParam("-vf", "\""+videoParams.map(_.param).mkString(", ")+"\"")
 }
+
+object FFMpegVideoParam {
+  def YADIF = FFMpegVideoParam("yadif")
+  def TRANSPOSE(transpose: Int) = FFMpegVideoParam(s"""transpose=$transpose""")
+  def SCALE_HEIGHT(height: Int) = FFMpegVideoParam(s"""scale=-1:$height""")
+  def SCALE_HEIGHT_NOOVERSIZE(height: Int) = FFMpegVideoParam(s"""scale=-1:'min($height,ih)'""")
+  def DESHAKE = FFMpegVideoParam("deshake")
+}
+
+case class FFMpegVideoParam(param: String)
+case class FFMpegParam(param: String*)

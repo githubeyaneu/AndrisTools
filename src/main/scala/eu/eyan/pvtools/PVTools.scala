@@ -41,65 +41,77 @@ import eu.eyan.util.rx.lang.scala.subjects.BehaviorSubjectPlus.BehaviorSubjectIm
 import rx.lang.scala.Observable
 import eu.eyan.util.rx.lang.scala.ObservablePlus.ObservableImplicitT
 import eu.eyan.pvtools.FFMPegPlus._
-import eu.eyan.util.wip.Jobs
+import eu.eyan.util.rx.lang.scala.ObserverPlus.ObserverImplicit
+import eu.eyan.util.swing.panelbuilder.Click
+import eu.eyan.pvtools.FFMpegParam._
+import eu.eyan.pvtools.FFMpegVideoParam._
 
 /**
- * TODO: konfig másodperc -> change, dont react immediately
- * TODO: auto import
  * TODO: read only -> nem sikerül videót másolni vagy képet másolni
  * TODO: fájlonként mentse az exportot
  */
 object PVTools extends App {
   Log.activateInfoLevel
-  // TODO LogWindow.redirectSystemOutAndErrToLogWindow
+  LogWindow.redirectSystemOutAndErrToLogWindow
 
   /*
    * TODO low prio ffmpeg:_
    * https://stackoverflow.com/questions/6223765/start-a-java-process-at-low-priority-using-runtime-exec-processbuilder-start
-   *
    * ProcessBuilder pb = new ProcessBuilder("cmd", "/C start /B /belownormal javaws -version");
-		System.out.println("Before start");
-Process start = pb.start();
-
+	 * Process start = pb.start();
    * */
-
-  //TODO Include deshake at least for resized!!
-  
-  // TODO: crop ffmpeg -i in.mp4 -filter:v "crop=out_w:out_h:x:y" out.mp4
-  // TODO: cut ffmpeg -ss 00:00:30 -i orginalfile -t 00:00:05 -vcodec copy -acodec copy newfile
 
 /***************************  UI  ***************************************************/
 
+  case class ImportPathTexts(importPaths: List[String])
+  case class ExportPath(exportPath: String)
+  case class ExtensionsToImport(private val extensionsToImport: String) {
+    def extensions = extensionsToImport.split(",").map(_.toLowerCase.trim).toSet
+  }
+  case class ExtensionsToConvert(private val extensionsToConvert: String) {
+    def extensions = extensionsToConvert.split(",")
+  }
+  case class ExtensionsToResize(private val extensionsToResize: String) {
+    def extensions = extensionsToResize.split(",")
+  }
+  case class FFMpegPath(ffmpegPath: String)
+  case class FFProbePath(ffprobePath: String)
+  case class ExifToolPath(exifToolPath: String)
+  case class UseAlreadyImported(useAlreadyImported: Boolean)
+  case class DoImport(doImport: Boolean)
+  case class CutFrom(cutFrom: String)
+  case class CutTo(cutTo: String)
+  case class CropX(cropX: String) { def x = cropX.toInt }
+  case class CropY(cropY: String) { def y = cropY.toInt }
+  case class CropWidth(cropWidth: String) { def w = cropWidth.toInt }
+  case class CropHeigth(cropHeight: String) { def h = cropHeight.toInt }
+
   private val TITLE = "Photo and video import"
 
-  private val jobs = Jobs()
-  private val enabledState = jobs.workInProgress.not
+  private val inProgress = BehaviorSubject(false)
+  private val enabledState = inProgress.not
 
-  private val importPathClicked = BehaviorSubject[String]()
-  private val importPathTexts = BehaviorSubject[List[String]]()
+  private val importPathClicked = BehaviorSubject[Click]()
+  private val importPaths = BehaviorSubject[ImportPathTexts]()
 
-  private val exportPathClicked = BehaviorSubject[String]()
-  private val exportPathTextField = BehaviorSubject[String]()
+  private val exportPathClicked = BehaviorSubject[Click]()
+  private val exportPath = BehaviorSubject[ExportPath]()
 
-  private val tempPathTextField = BehaviorSubject[String]()
-  private val tempPathClicked = BehaviorSubject[String]()
+  private val extensionsToImport = BehaviorSubject[ExtensionsToImport]()
+  private val extensionsToConvert = BehaviorSubject[ExtensionsToConvert]()
+  private val extensionsToResize = BehaviorSubject[ExtensionsToResize]()
+  private val ffmpegPath = BehaviorSubject[FFMpegPath]()
+  private val ffprobePath = BehaviorSubject[FFProbePath]()
+  private val exiftoolPath = BehaviorSubject[ExifToolPath]()
+  private val useAlreadyImported = BehaviorSubject[UseAlreadyImported]()
 
-  private val extensionsToImportTextField = BehaviorSubject[String]()
-  private val extensionsToConvertTextField = BehaviorSubject[String]()
-  private val extensionsToResizeTextField = BehaviorSubject[String]()
-  private val ffmpegPathTextField = BehaviorSubject[String]()
-  private val ffprobePathTextField = BehaviorSubject[String]()
-  private val exiftoolPathTextField = BehaviorSubject[String]()
-  private val checkIntervalTextField = BehaviorSubject[String]()
-  private val useAlreadyImported = BehaviorSubject[Boolean]()
-
-  private val checkToImportClicked = BehaviorSubject[String]()
+  private val checkToImportClicked = BehaviorSubject[Click]()
 
   private val checkToImportLabel = BehaviorSubject[String]()
 
-  private val doImport = BehaviorSubject[Boolean]()
+  private val doImport = BehaviorSubject[DoImport]()
 
-  private val importClicked = BehaviorSubject[String]()
+  private val importClicked = BehaviorSubject[Click]()
 
   private val importLabel = BehaviorSubject[String]()
 
@@ -113,6 +125,15 @@ Process start = pb.start();
   private val filesToRotate2 = BehaviorSubject[List[File]]()
   private val filesToRotate3 = BehaviorSubject[List[File]]()
 
+  private val filesToCut = BehaviorSubject[List[File]]()
+  private val cutFrom = BehaviorSubject[CutFrom]()
+  private val cutTo = BehaviorSubject[CutTo]()
+  private val filesToCrop = BehaviorSubject[List[File]]()
+  private val cropX = BehaviorSubject[CropX]()
+  private val cropY = BehaviorSubject[CropY]()
+  private val cropWidth = BehaviorSubject[CropWidth]()
+  private val cropHeight = BehaviorSubject[CropHeigth]()
+
   private val logArea = BehaviorSubject[String]()
   private val logAreaAppender = BehaviorSubject[String]()
 
@@ -120,44 +141,38 @@ Process start = pb.start();
     .newColumn.newColumnFPG
 
     .newRow("f:p").addLabel.text("Import path: ").cursor_HAND_CURSOR.onMouseClicked(importPathClicked)
-    .nextColumn.addTextFieldMulti("importPathTextField", 30).setValues(List()).remember("importPathTextFields").onChanged(importPathTexts)
+    .nextColumn.addTextFieldMulti("importPathTextField", 30).setValues(List()).remember("importPathTextFields").onChanged(importPaths.pam(ImportPathTexts(_)))
 
     .newRow.addLabel.text("Export path: ").cursor_HAND_CURSOR.onMouseClicked(exportPathClicked)
-    .nextColumn.addTextField.text("").onTextChanged(exportPathTextField).remember("exportPath")
-
-    .newRow.addLabel.text("Local temp path: ").cursor_HAND_CURSOR.onMouseClicked(tempPathClicked)
-    .nextColumn.addTextField.text("").onTextChanged(tempPathTextField).remember("tempPath")
+    .nextColumn.addTextField.text("").onTextChanged(exportPath.pam(ExportPath(_))).remember("exportPath")
 
     .newRow.addLabel.text("Files to import: ")
-    .nextColumn.addTextField.text("JPG,MTS,m2ts,mp4,jpeg").onTextChanged(extensionsToImportTextField).remember("extensionsToImport")
+    .nextColumn.addTextField.text("JPG,MTS,m2ts,mp4,jpeg").onTextChanged(extensionsToImport.pam(ExtensionsToImport(_))).remember("extensionsToImport")
 
     .newRow.addLabel.text("Files to convert: ")
-    .nextColumn.addTextField.text("MTS,m2ts").onTextChanged(extensionsToConvertTextField).remember("extensionsToConvert")
+    .nextColumn.addTextField.text("MTS,m2ts").onTextChanged(extensionsToConvert.pam(ExtensionsToConvert(_))).remember("extensionsToConvert")
 
     .newRow.addLabel.text("Files to resize: ")
-    .nextColumn.addTextField.text("MTS,m2ts,mp4").onTextChanged(extensionsToResizeTextField).remember("extensionsToResize")
+    .nextColumn.addTextField.text("MTS,m2ts,mp4").onTextChanged(extensionsToResize.pam(ExtensionsToResize(_))).remember("extensionsToResize")
 
     .newRow.addLabel.text("ffmpeg.exe location: ")
-    .nextColumn.addTextField.text("""C:\private\ffmpeg\bin\ffmpeg.exe""").onTextChanged(ffmpegPathTextField).remember("ffmpeg")
+    .nextColumn.addTextField.text("""C:\private\ffmpeg\bin\ffmpeg.exe""").onTextChanged(ffmpegPath.pam(FFMpegPath(_))).remember("ffmpeg")
 
     .newRow.addLabel.text("ffprobe.exe location: ")
-    .nextColumn.addTextField.text("""C:\private\ffmpeg\bin\ffprobe.exe""").onTextChanged(ffprobePathTextField).remember("ffprobe")
+    .nextColumn.addTextField.text("""C:\private\ffmpeg\bin\ffprobe.exe""").onTextChanged(ffprobePath.pam(FFProbePath(_))).remember("ffprobe")
 
     .newRow.addLabel.text("exiftool.exe location: ")
-    .nextColumn.addTextField.text("""C:\private\exiftool.exe""").onTextChanged(exiftoolPathTextField).remember("exiftool")
+    .nextColumn.addTextField.text("""C:\private\exiftool.exe""").onTextChanged(exiftoolPath.pam(ExifToolPath(_))).remember("exiftool")
 
-    .newRow.addLabel.text("Check interval (s): ")
-    .nextColumn.addTextField.text("3600").onTextChanged(checkIntervalTextField).remember("checkInterval")
+    .newRow.addCheckBox.text("Use already imported txt").onSelectionChanged(useAlreadyImported.pam(UseAlreadyImported(_))).remember("useAlreadyImported")
 
-    .newRow.addCheckBox.text("Use already imported txt").onSelectionChanged(useAlreadyImported).remember("useAlreadyImported")
+    .nextColumn.addButton.text("Check to import").onAction(checkToImportClicked).enabled(enabledState)
+    .newRow.span.addLabel.text("").text(checkToImportLabel)
 
-    .newRow.addButton.text("Check to import").onAction(checkToImportClicked).enabled(enabledState)
-    .nextColumn.addLabel.text("").text(checkToImportLabel)
+    .newRow.addCheckBox.text("Do Import").onSelectionChanged(doImport.pam(DoImport(_))).remember("doImport")
 
-    .newRow.addCheckBox.text("Do Import").onSelectionChanged(doImport).remember("doImport")
-
-    .newRow.addButton.text("Import").onAction(importClicked).enabled(enabledState)
-    .nextColumn.addLabel.text(importLabel)
+    .nextColumn.addButton.text("Import").onAction(importClicked).enabled(enabledState)
+    .newRow.span.addLabel.text(importLabel)
 
     .newRow.addLabel.text("Progress:")
     .nextColumn.addProgressBar().format(progressBarFormat).value(progressBarValue).finished(progressBarFinished)
@@ -170,6 +185,26 @@ Process start = pb.start();
       .newColumn.addButton.text("90").disabled.onDropFiles(filesToRotate1)
       .newColumn.addButton.text("-90").disabled.onDropFiles(filesToRotate2)
       .newColumn.addButton.text("90VF").disabled.onDropFiles(filesToRotate3))
+
+    .newRow.addButton.text("Cut file").disabled.onDropFiles(filesToCut)
+    .nextColumn.addPanelBuilder(_
+      .withSeparators
+      .addLabel.text("from: ")
+      .newColumn.addTextField.text("00:00:00").size(10).onTextChanged(cutFrom.pam(CutFrom(_))).remember("cutFrom")
+      .newColumn.addLabel.text("length: ")
+      .newColumn.addTextField.text("00:00:00").size(10).onTextChanged(cutTo.pam(CutTo(_))).remember("cutTo"))
+
+    .newRow.addButton.text("Crop file").disabled.onDropFiles(filesToCrop)
+    .nextColumn.addPanelBuilder(_
+      .withSeparators
+      .addLabel.text("x: ")
+      .newColumn.addTextField.text("").size(5).onTextChanged(cropX.pam(CropX(_))).remember("cropX")
+      .newColumn.addLabel.text("y: ")
+      .newColumn.addTextField.text("").size(5).onTextChanged(cropY.pam(CropY(_))).remember("cropY")
+      .newColumn.addLabel.text("width: ")
+      .newColumn.addTextField.text("").size(5).onTextChanged(cropWidth.pam(CropWidth(_))).remember("cropW")
+      .newColumn.addLabel.text("height: ")
+      .newColumn.addTextField.text("").size(5).onTextChanged(cropHeight.pam(CropHeigth(_))).remember("cropH"))
 
     .newRow("f:100px:g").span.addTextArea.textAppender(logAreaAppender).text(logArea)
     .getPanel
@@ -190,41 +225,58 @@ Process start = pb.start();
       .packAndSetVisible
       .center
 
-  case class Params(private val params: (List[String], String, String, String, String, String, String, String, String, String, Boolean, Boolean)) {
-    def importPathTexts = params._1
-    def exportPathTextField = params._2
-    def tempPathTextField = params._3
-    def extensionsToImportTextField = params._4
-    def extensionsToConvertTextField = params._5
-    def extensionsToResizeTextField = params._6
-    def ffmpegPathTextField = params._7
-    def ffprobePathTextField = params._8
-    def exiftoolPathTextField = params._9
-    def checkIntervalTextField = params._10
-    def useAlreadyImported = params._11
-    def doImport = params._12
+  case class CutParams(private val params: (CutFrom, CutTo)) {
+    def from = params._1
+    def to = params._2
   }
+  case class CropParams(private val params: (CropX, CropY, CropWidth, CropHeigth)) {
+    def x = params._1
+    def y = params._2
+    def width = params._3
+    def heigth = params._4
+  }
+  case class Params(private val params: (ImportPathTexts, ExportPath, ExtensionsToImport, ExtensionsToConvert, ExtensionsToResize, FFMpegPath, FFProbePath, ExifToolPath, UseAlreadyImported, DoImport, CutParams, CropParams)) {
+    def importPaths = params._1
+    def exportPath = params._2
+    def extensionsToImport = params._3
+    def extensionsToConvert = params._4
+    def extensionsToResize = params._5
+    def ffmpegPath = params._6
+    def ffprobePath = params._7
+    def exiftoolPath = params._8
+    def useAlreadyImported = params._9
+    def doImport = params._10
+    def cut = params._11
+    def crop = params._12
+  }
+
+  val cutParams$ = ObservablePlus.combineLatest(cutFrom, cutTo).map(CutParams)
+  val cropParams$ = ObservablePlus.combineLatest(cropX, cropY, cropWidth, cropHeight).map(CropParams)
+
   val params$ = ObservablePlus.combineLatest(
-    importPathTexts, exportPathTextField, tempPathTextField, extensionsToImportTextField, extensionsToConvertTextField, extensionsToResizeTextField, ffmpegPathTextField, ffprobePathTextField, exiftoolPathTextField, checkIntervalTextField, useAlreadyImported, doImport).map(Params)
+    importPaths, exportPath, extensionsToImport, extensionsToConvert, extensionsToResize, ffmpegPath, ffprobePath, exiftoolPath, useAlreadyImported, doImport, cutParams$, cropParams$).map(Params)
 
-  importPathTexts.subscribe(v => frame.resizeAndBack) // this resizeAndBack should be handled better! in the multi class
+  importPaths.subscribe(v => frame.resizeAndBack) // this resizeAndBack should be handled better! in the multi class
 
-  importPathClicked.takeLatestOf(importPathTexts).subscribe(_.foreach(_.openAsFile))
-  exportPathClicked.takeLatestOf(exportPathTextField).subscribe(_.openAsFile)
-  tempPathClicked.takeLatestOf(tempPathTextField).subscribe(_.openAsFile)
+  importPathClicked.takeLatestOf(importPaths).subscribe(_.importPaths.foreach(_.openAsFile))
+  exportPathClicked.takeLatestOf(exportPath).subscribe(_.exportPath.openAsFile)
 
   checkToImportClicked.takeLatestOf(params$).subscribe(params => execute(checkFilesToImport(params)))
   importClicked.takeLatestOf(params$).subscribe(params => execute(importFiles(params)))
 
-  filesToResize.combineLatest(params$).subscribe(filesParams => execute(filesParams._1.foreach(resizeFile(720, filesParams._2.ffmpegPathTextField, filesParams._2.ffprobePathTextField, long => {/*TODO*/}))))
+  filesToResize.withLatestOf(params$).subscribe(filesParams => execute(filesParams._1.foreach(resizeFile(filesParams._2))))
 
-  def rotateFiles(rotate: Int)(filesFfmgep: (List[File], String)) = execute(filesFfmgep._1.foreach(rotateFile(filesFfmgep._2, rotate, l=>{})))
-  filesToRotate0.combineLatest(ffmpegPathTextField).subscribe(rotateFiles(0)(_))
-  filesToRotate1.combineLatest(ffmpegPathTextField).subscribe(rotateFiles(1)(_))
-  filesToRotate2.combineLatest(ffmpegPathTextField).subscribe(rotateFiles(2)(_))
-  filesToRotate3.combineLatest(ffmpegPathTextField).subscribe(rotateFiles(3)(_))
+  def rotateFiles(rotate: Int)(filesFfmgep: (List[File], FFMpegPath)) = execute(filesFfmgep._1.foreach(rotateFile(filesFfmgep._2, rotate, l => {})))
+  filesToRotate0.withLatestOf(ffmpegPath).subscribe(rotateFiles(0)(_))
+  filesToRotate1.withLatestOf(ffmpegPath).subscribe(rotateFiles(1)(_))
+  filesToRotate2.withLatestOf(ffmpegPath).subscribe(rotateFiles(2)(_))
+  filesToRotate3.withLatestOf(ffmpegPath).subscribe(rotateFiles(3)(_))
 
-  private def execute(action: => Unit) = SwingPlus.runInWorker(jobs.run{action}) 
+  filesToCut.withLatestOf(params$).subscribe(filesParams => execute(filesParams._1.foreach(cutFile(filesParams._2))))
+  filesToCrop.withLatestOf(params$).subscribe(filesParams => execute(filesParams._1.foreach(cropFile(filesParams._2))))
+
+  //TODO refactor this is bad design. instead create an array and as long array is not empty then in progress....
+  private def execute(action: => Unit) = { inProgress.onNext(true); SwingPlus.runInWorker(action, inProgress.onNext(false)) }
 
   private def importFiles(params: Params) = {
     def now = System.currentTimeMillis
@@ -256,15 +308,22 @@ Process start = pb.start();
       Log.trace("progressBytes " + (bytes * 100 / filesToImportSizeSum))
     }
 
-    val importResults = files /* .par FIXME */ .map(file => importFile(params, fileProgress(file))(file)).toList.sortBy(_._2)
+    val importResults = files.par.map(file => importFile(params, fileProgress(file))(file)).toList.sortBy(_._2)
     val importSuccessful = importResults.filter(_._1.isEmpty)
     val importFailed = importResults.filter(_._1.nonEmpty)
 
-    log("Imported files:\n" + importSuccessful.mkString("\n") + ".")
-    log("NOT Imported files:\n" + importFailed.mkString("\n") + ".")
+    if (importSuccessful.nonEmpty)
+      log("Imported files:\n" + importSuccessful.mkString("\n") + ".")
+    else
+      log("Imported files: NOTHING!!!")
 
-    val newList = alreadyImportedFiles(params.exportPathTextField) ++ importSuccessful.map(_._2)
-    newList.mkStringNL.writeToFileUtf8(alreadyImportedFile(params.exportPathTextField).toString)
+    if (importFailed.nonEmpty)
+      log("NOT Imported files:\n" + importFailed.mkString("\n") + ".")
+    else
+      log("NOT Imported files: OK, no errors.")
+
+    val newList = alreadyImportedFiles(params.exportPath.exportPath) ++ importSuccessful.map(_._2)
+    newList.mkStringNL.writeToFileUtf8(alreadyImportedFile(params.exportPath.exportPath).toString)
 
     importLabel.onNext("Import finished")
     progressBarFinished onNext "finished"
@@ -294,7 +353,7 @@ Process start = pb.start();
           lazy val dateInFileName = "\\d{8}[_-]?\\d{6}"
           lazy val fileNameDTs = fileToImportName.findAll(dateInFileName)
           lazy val lastModifiedTime = fileToImport.lastModifiedTime.toString("yyyyMMdd_HHmmss")
-          lazy val exifDT = exifDateTime(fileToImport, params.exiftoolPathTextField)
+          lazy val exifDT = exifDateTime(fileToImport, params.exiftoolPath.exifToolPath)
 
           def extendWithSpaceIfNeeded(s: String) = {
             val ret = if (s.contains(" ")) s else s.patch(8, " ", 0)
@@ -311,9 +370,9 @@ Process start = pb.start();
 
           val fileNameWithoutDate = fileToImportName.replaceAll(dateInFileName, "").trim
 
-          val targetFileWithCorrectName = ((params.exportPathTextField + "\\" + targetDate + " " + fileNameWithoutDate).trim + fileToImportExtension).asFile
+          val targetFileWithCorrectName = ((params.exportPath + "\\" + targetDate + " " + fileNameWithoutDate).trim + fileToImportExtension).asFile
           val targetFileMaybeDuplicate =
-            if (isVideoToConvert(params.extensionsToConvertTextField)(fileToImport)) (targetFileWithCorrectName.withoutExtension + ".mp4").asFile
+            if (isVideoToConvert(params.extensionsToConvert)(fileToImport)) (targetFileWithCorrectName.withoutExtension + ".mp4").asFile
             else targetFileWithCorrectName
 
           if (targetFileMaybeDuplicate.exists) Log.info("ALREADY EXISTS " + targetFileMaybeDuplicate)
@@ -333,53 +392,22 @@ Process start = pb.start();
 
           val importResult: Option[String] =
             if (targetFile.exists) Option("ALREADY EXISTS")
-            else if (params.doImport) {
-
-              if (isVideoToResize(params.extensionsToResizeTextField)(fileToImport)) {
-                val resizeRes = TryCatch({
-                  val resizeTargetFileName = targetFile.addSubDir("resized")
-                  log("Resize video " + fileToImport + " to " + resizeTargetFileName)
-
-                  val res = resizeFile(720, params.ffmpegPathTextField, params.ffprobePathTextField, fileToImport, resizeTargetFileName, convertActualBytesToProgress)
-                  resizeTargetFileName.setLastModified(fileToImport.lastModified)
-                  println("Importt " + fileToImport)
-                  //Files.setAttribute(resizeTargetFileName.toPath, "creationTime", FileTime.from(fileToImport.creationTime))
-                  println("Importtt")
-                  //                  println("---")
-                  //                  println("E " + res.exitValue)
-                  //                  println("Output " + res.output)
-                  //                  println("Erroe " + res.errorOutput)
-                  //                  println("---")
-                  res
-                }, (e: Throwable) => println("Resizing error: " + e.getMessage))
-              } else if (isImageToResize("jpg,JPG,jpeg,JPEG")(fileToImport)) {
-                val resizeRes = TryCatch({
-                  val resizeTargetFileName = targetFile.addSubDir("resized")
-                  log("Resize image " + fileToImport + " to " + resizeTargetFileName)
-                  val res = runFFMpeg(params.ffmpegPathTextField, fileToImport, resizeTargetFileName, convertActualBytesToProgress, FFMpegParam.SCALE_HEIGHT_NOOVERSIZE(1080))
-                  resizeTargetFileName.setLastModified(fileToImport.lastModified)
-                  //Files.setAttribute(resizeTargetFileName.toPath, "creationTime", FileTime.from(fileToImport.creationTime))
-                  log("Resize image result " + res)
-                  res
-                }, (e: Throwable) => println("Resizing error: " + e.getMessage))
-              } else log("Not to resize " + fileToImport)
+            else if (params.doImport.doImport) {
 
               // Import File
-              if (isVideoToConvert(params.extensionsToConvertTextField)(fileToImport)) {
+              if (isVideoToConvert(params.extensionsToConvert)(fileToImport)) {
                 log("Convert video " + fileToImport + " to " + targetFile)
 
-                
                 val res = runFFMpeg(
-                  params.ffmpegPathTextField,
+                  params.ffmpegPath.ffmpegPath,
                   fileToImport,
                   targetFile,
                   convertActualBytesToProgress,
-                  FFMpegParam.VF_YADIF,
-                  FFMpegParam.VCODEC_MPEG4,
-                  FFMpegParam.BITRATE_VIDEO_17M,
-                  FFMpegParam.AUDIO_CODEC_MP3,
-                  FFMpegParam.BITRATE_AUDIO_192K)
-                  
+                  VF(YADIF),
+                  VCODEC_MPEG4,
+                  BITRATE_VIDEO_17M,
+                  AUDIO_CODEC_MP3,
+                  BITRATE_AUDIO_192K)
                 targetFile.setLastModified(fileToImport.lastModified)
                 Files.setAttribute(targetFile.toPath, "creationTime", FileTime.from(fileToImport.creationTime))
 
@@ -427,35 +455,33 @@ Process start = pb.start();
   private def checkFilesToImport(params: Params): List[File] = {
     logArea.onNext("")
     Log.info("Checking files to import")
-    if (params.importPathTexts.size < 1) { alert("Set at least one import dir please."); List() }
-    else if (!params.importPathTexts.map(_.asDir.existsAndDir).forall(d2 => d2)) { alert("One of the import dirs does not exists."); List() }
-    else if (!params.exportPathTextField.asDir.existsAndDir) { alert("Export dir does not exists."); List() }
-    else if (!params.tempPathTextField.asDir.existsAndDir) { alert("Temp dir does not exists."); List() }
-    else if (params.ffmpegPathTextField.asFile.notExists) { alert("ffmpeg does not exists."); List() }
-    else if (params.ffprobePathTextField.asFile.notExists) { alert("ffprobe does not exists."); List() }
-    else if (params.exiftoolPathTextField.asFile.notExists) { alert("exiftool does not exists."); List() }
+    if (params.importPaths.importPaths.size < 1) { alert("Set at least one import dir please."); List() }
+    else if (!params.importPaths.importPaths.map(_.asDir.existsAndDir).forall(d2 => d2)) { alert("One of the import dirs does not exists."); List() }
+    else if (!params.exportPath.exportPath.asDir.existsAndDir) { alert("Export dir does not exists."); List() }
+    else if (params.ffmpegPath.ffmpegPath.asFile.notExists) { alert("ffmpeg does not exists."); List() }
+    else if (params.ffprobePath.ffprobePath.asFile.notExists) { alert("ffprobe does not exists."); List() }
+    else if (params.exiftoolPath.exifToolPath.asFile.notExists) { alert("exiftool does not exists."); List() }
     else {
 
-      val dirs = params.importPathTexts
+      val dirs = params.importPaths.importPaths
       val allFiles = dirs.flatMap(_.asDir.subFiles.toList)
       log("All files: " + allFiles.size)
       val allExtensions = allFiles.map(_.extension).distinct.map(_.toLowerCase.trim).map(_.substring(1)).toSet
       log("All extensions: " + allExtensions.mkString(", "))
-      val extensionsToImport = params.extensionsToImportTextField.split(",").map(_.toLowerCase.trim).toSet
+      val extensionsToImport = params.extensionsToImport.extensions
       log("ExtensionsToImport: " + extensionsToImport.mkString(", "))
       log("NOT to import: " + allExtensions.diff(extensionsToImport).mkString(", "))
       val allFilesToImport = allFiles.filter(_.endsWith(extensionsToImport.toList: _*))
       log("Files to Import: " + allFilesToImport.size)
 
       Log.trace("allFiles\r\n" + allFilesToImport.mkStringNL)
-      Log.trace("\r\nalreadyImportedFiles\r\n" + alreadyImportedFiles(params.exportPathTextField).mkStringNL)
-      val filesToImport = if (params.useAlreadyImported) {
-//        println("allFilesToImport", allFilesToImport)
-//        println("alreadyImportedFiles", alreadyImportedFiles(params.exportPathTextField))
-//        println("diff", allFilesToImport.diff(alreadyImportedFiles(params.exportPathTextField)))
-        allFilesToImport.diff(alreadyImportedFiles(params.exportPathTextField)) 
-      }
-      else allFilesToImport
+      Log.trace("\r\nalreadyImportedFiles\r\n" + alreadyImportedFiles(params.exportPath.exportPath).mkStringNL)
+      val filesToImport = if (params.useAlreadyImported.useAlreadyImported) {
+        //        println("allFilesToImport", allFilesToImport)
+        //        println("alreadyImportedFiles", alreadyImportedFiles(params.exportPathTextField))
+        //        println("diff", allFilesToImport.diff(alreadyImportedFiles(params.exportPathTextField)))
+        allFilesToImport.diff(alreadyImportedFiles(params.exportPath.exportPath))
+      } else allFilesToImport
       Log.trace("filesToImport " + filesToImport.mkStringNL)
       val filesToImportSizeSum = filesToImport.map(_.length).sum
 
@@ -463,21 +489,18 @@ Process start = pb.start();
       Log.info("Checking files to import: " + filesToImport.size + " files.")
       if (filesToImport.nonEmpty) frame.state_Normal.visible.toFront
 
-      filesToImport.sortBy(_.length)
+      filesToImport.sortBy(_.length).reverse
     }
   }
 
-  private def log(txt: Any) = {
-    Log.info("LOG "+txt)
-    logAreaAppender.onNext(txt + "\n")
-  }
+  private def log(txt: Any) = logAreaAppender.onNext(txt + "\n")
 
   private def writeEmail() =
     Desktop.getDesktop.mail(new URI("mailto:PVTools@eyan.eu?subject=Photo%20and%20video%20import&body=" + URLEncoder.encode(LogWindow.getAllLogs, "utf-8").replace("+", "%20")))
 
-  private def isVideoToConvert(extensionsToConvert: String)(file: File) = this.synchronized { file.endsWith(extensionsToConvert.split(","): _*) }
+  private def isVideoToConvert(extensionsToConvert: ExtensionsToConvert)(file: File) = this.synchronized { file.endsWith(extensionsToConvert.extensions: _*) }
 
-  private def isVideoToResize(extensionsToResize: String)(file: File) = file.endsWith(extensionsToResize.split(","): _*)
+  private def isVideoToResize(extensionsToResize: ExtensionsToResize)(file: File) = file.endsWith(extensionsToResize.extensions: _*)
   private def isImageToResize(extensionsToResize: String)(file: File) = file.endsWith(extensionsToResize.split(","): _*)
 
   private def alreadyImportedFile(exportPath: String) = (exportPath + "\\alreadyImported.txt").asFile
@@ -510,8 +533,60 @@ Process start = pb.start();
     }
   }
 
-  private def resizeFile(height: Int, ffmpegPath: String, ffprobePath: String, progress: Long=>Unit)(inFile: File): Unit = resizeFile(height, ffmpegPath, ffprobePath, inFile, inFile.addSubDir("resized"), progress)
-  private def resizeFile(height: Int, ffmpegPath: String, ffprobePath: String, inFile: File, outFile: File, progress: Long=>Unit): Unit = {
+  private def cutFile(params: Params)(fileToCut: File): Unit = {
+    val targetFileName = fileToCut.extendFileNameWith("_cut")
+    log("Cut video " + fileToCut + " to " + targetFileName)
+    val res = runFFMpeg(params.ffmpegPath.ffmpegPath, fileToCut, targetFileName, dontcare => {},
+      CUT(params.cut.from.cutFrom, params.cut.to.cutTo),
+      CODEC_AUDIO_COPY, CODEC_VIDEO_COPY)
+
+    targetFileName.setLastModified(fileToCut.lastModified)
+    log("Cut video result " + res)
+  }
+  private def cropFile(params: Params)(fileToCrop: File): Unit = {
+    val targetFileName = fileToCrop.extendFileNameWith("_crop")
+    log("Crop video " + fileToCrop + " to " + targetFileName)
+    val res = runFFMpeg(params.ffmpegPath.ffmpegPath, fileToCrop, targetFileName, dontcare => {},
+      CROP(params.crop.x.x, params.crop.y.y, params.crop.width.w, params.crop.heigth.h))
+    targetFileName.setLastModified(fileToCrop.lastModified)
+    log("Crop video result " + res)
+
+  }
+  private def resizeFile(params: Params)(fileToResize: File): Unit = {
+    if (isVideoToResize(params.extensionsToResize)(fileToResize)) {
+      val resizeRes = TryCatch({
+        val resizeTargetFileName = fileToResize.addSubDir("resized")
+        log("Resize video " + fileToResize + " to " + resizeTargetFileName)
+
+        val res = resizeFile(720, params.ffmpegPath.ffmpegPath, params.ffprobePath.ffprobePath, fileToResize, resizeTargetFileName)
+        resizeTargetFileName.setLastModified(fileToResize.lastModified)
+        //        println("Importt " + fileToResize)
+        //Files.setAttribute(resizeTargetFileName.toPath, "creationTime", FileTime.from(fileToImport.creationTime))
+        //        println("Importtt")
+        //                  println("---")
+        //                  println("E " + res.exitValue)
+        //                  println("Output " + res.output)
+        //                  println("Erroe " + res.errorOutput)
+        //                  println("---")
+        log("Resize video result " + res)
+        res
+      }, (e: Throwable) => println("Resizing error: " + e.getMessage))
+
+    } else if (isImageToResize("jpg,JPG,jpeg,JPEG")(fileToResize)) {
+      val resizeRes = TryCatch({
+        val resizeTargetFileName = fileToResize.addSubDir("resized")
+        log("Resize image " + fileToResize + " to " + resizeTargetFileName)
+        val res = runFFMpeg(params.ffmpegPath.ffmpegPath, fileToResize, resizeTargetFileName, /*FIXME*/ dontcare => {}, VF(SCALE_HEIGHT_NOOVERSIZE(1080)))
+        resizeTargetFileName.setLastModified(fileToResize.lastModified)
+        //Files.setAttribute(resizeTargetFileName.toPath, "creationTime", FileTime.from(fileToImport.creationTime))
+        log("Resize image result " + res)
+        res
+      }, (e: Throwable) => println("Resizing error: " + e.getMessage))
+    } else log("Not to resize " + fileToResize)
+  }
+
+  //private def resizeFile_(height: Int, ffmpegPath: String, ffprobePath: String)(inFile: File): Unit = resizeFile(height, ffmpegPath, ffprobePath, inFile, inFile.addSubDir("resized"))
+  private def resizeFile(height: Int, ffmpegPath: String, ffprobePath: String, inFile: File, outFile: File): Unit = {
     Log.info(inFile);
     val sizeCmd = ffprobePath + s""" -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "${inFile.getAbsolutePath}" """
 
@@ -552,19 +627,20 @@ Process start = pb.start();
     else {
       val height = resizeHeight.get
       log("Resize height=" + height + " " + inFile + " to " + outFile)
-      log("Resize exit code: " + runFFMpeg(ffmpegPath, inFile, outFile, progress, FFMpegParam.SCALE_HEIGHT(height),
-        FFMpegParam.CODEC_VIDEO_LIBX264,
-        FFMpegParam.CONSTANT_RATE_FACTOR_VISUALLY_LOSSLESS,
-        FFMpegParam.PRESET_MEDIUM,
-        FFMpegParam.CODEC_AUDIO_COPY))
+      log("Resize exit code: " + runFFMpeg(ffmpegPath, inFile, outFile, dontcare => {},
+        VF(SCALE_HEIGHT(height), DESHAKE),
+        CODEC_VIDEO_LIBX264,
+        CONSTANT_RATE_FACTOR_VISUALLY_LOSSLESS,
+        PRESET_MEDIUM,
+        CODEC_AUDIO_COPY))
     }
     log("---Done---")
   }
 
-  private def rotateFile(ffmpegPath: String, transpose: Int, bytesDoneProgress: Long => Unit)(inFile: File): Unit = {
+  private def rotateFile(ffmpegPath: FFMpegPath, transpose: Int, bytesDoneProgress: Long => Unit)(inFile: File): Unit = {
     val out = inFile.extendFileNameWith("_r" + transpose.toString)
     log("Rotate " + transpose + " " + inFile + " " + out)
-    log("Rotate exit code: " + runFFMpeg(ffmpegPath, inFile, out, bytesDoneProgress, FFMpegParam.TRANSPOSE(transpose)))
+    log("Rotate exit code: " + runFFMpeg(ffmpegPath.ffmpegPath, inFile, out, bytesDoneProgress, VF(TRANSPOSE(transpose))))
   }
-  
+
 }

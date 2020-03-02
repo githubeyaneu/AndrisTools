@@ -78,7 +78,7 @@ object FileLister3 extends App {
     .nextColumn.addTextField.text("I:,N:,P:,T:,Y:").onTextChanged(ignoreText).remember("ignore")
 
     .newRow.addLabel.text("Start to list:")
-    .nextColumn.addButton.text("Start to list.").onAction(startButton).enabled(isWorkInProgress.negate)
+    .nextColumn.addButton.text("Start to list.").onActionEvent(startButton).enabled(isWorkInProgress.negate)
 
     .newRow.addLabel.text("Count").text(counter.map(_.toString))
     .getPanel
