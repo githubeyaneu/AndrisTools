@@ -42,6 +42,8 @@ import javax.swing.SwingUtilities
 import rx.lang.scala.Observable
 import eu.eyan.util.rx.lang.scala.ObservablePlus
 import eu.eyan.util.swing.panelbuilder.JPanelBuilder
+import eu.eyan.util.swing.panelbuilder.Click
+import eu.eyan.util.swing.panelbuilder.Click
 
 /**
  * To list all the files on all drives. Also search inside the compressed files.
@@ -60,7 +62,7 @@ object FileLister3 extends App {
   val targetText = BehaviorSubject[String]
   val daysText = BehaviorSubject[String]
   val ignoreText = BehaviorSubject[String]
-  val startButton = BehaviorSubject[String]
+  val startButton = BehaviorSubject[Click]
   val isWorkInProgress = BehaviorSubject(false)
   val counter = BehaviorSubject[Int]
 
@@ -78,7 +80,7 @@ object FileLister3 extends App {
     .nextColumn.addTextField.text("I:,N:,P:,T:,Y:").onTextChanged(ignoreText).remember("ignore")
 
     .newRow.addLabel.text("Start to list:")
-    .nextColumn.addButton.text("Start to list.").onActionEvent(startButton).enabled(isWorkInProgress.negate)
+    .nextColumn.addButton.text("Start to list.").onAction(startButton).enabled(isWorkInProgress.negate)
 
     .newRow.addLabel.text("Count").text(counter.map(_.toString))
     .getPanel
@@ -137,5 +139,4 @@ object FileLister3 extends App {
   }
 
   def formatFileLog(path: String, instant: Instant, size: Long) = f"${instant.toString(DT)}  $size%10s  $path"
-
 }
