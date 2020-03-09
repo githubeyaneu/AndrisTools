@@ -43,7 +43,8 @@ import rx.lang.scala.Observable
 import eu.eyan.util.rx.lang.scala.ObservablePlus
 import eu.eyan.util.swing.panelbuilder.JPanelBuilder
 import eu.eyan.util.swing.panelbuilder.Click
-import eu.eyan.util.swing.panelbuilder.Click
+import eu.eyan.util.rx.lang.scala.ObservablePlus.ObservableImplicitT
+import eu.eyan.util.rx.lang.scala.subjects.BehaviorSubjectPlus.BehaviorSubjectImplicitT
 
 /**
  * To list all the files on all drives. Also search inside the compressed files.
@@ -94,7 +95,7 @@ object FileLister3 extends App {
     .menuItem("Help", "About", alert("This is not an official tool, no responsibilities are taken. Use it at your own risk."))
     .packAndSetVisible
 
-  ObservablePlus.toList(startButton, targetText.map(_.asFile)).map(_(1).asInstanceOf[File]).subscribe(startToList(_))
+  startButton.takeLatestOf(targetText.map(_.asFile)).map(_.asInstanceOf[File]).subscribe(startToList(_))
   def writeEmail = Desktop.getDesktop.mail(new URI("mailto:PVTools@eyan.eu?subject=FileLister&body=" + URLEncoder.encode(LogWindow.getAllLogs, "utf-8").replace("+", "%20")))
   def alert(msg: String) = JOptionPane.showMessageDialog(null, msg)
 
