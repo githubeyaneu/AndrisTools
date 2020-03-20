@@ -45,15 +45,16 @@ import eu.eyan.util.rx.lang.scala.ObserverPlus.ObserverImplicit
 import eu.eyan.util.swing.panelbuilder.Click
 import eu.eyan.pvtools.FFMpegParam._
 import eu.eyan.pvtools.FFMpegVideoParam._
+import eu.eyan.util.java.lang.RuntimePlus
 
-/**
- * TODO: read only -> nem sikerül videót másolni vagy képet másolni
- * TODO: fájlonként mentse az exportot
- */
 object PVTools extends App {
   Log.activateInfoLevel
   LogWindow.redirectSystemOutAndErrToLogWindow
 
+  /**
+   * TODO: read only -> nem sikerül videót másolni vagy képet másolni
+   * TODO: fájlonként mentse az exportot
+   */
   /*
    * TODO low prio ffmpeg:_
    * https://stackoverflow.com/questions/6223765/start-a-java-process-at-low-priority-using-runtime-exec-processbuilder-start
@@ -370,7 +371,7 @@ object PVTools extends App {
 
           val fileNameWithoutDate = fileToImportName.replaceAll(dateInFileName, "").trim
 
-          val targetFileWithCorrectName = ((params.exportPath + "\\" + targetDate + " " + fileNameWithoutDate).trim + fileToImportExtension).asFile
+          val targetFileWithCorrectName = ((params.exportPath.exportPath + "\\" + targetDate + " " + fileNameWithoutDate).trim + fileToImportExtension).asFile
           val targetFileMaybeDuplicate =
             if (isVideoToConvert(params.extensionsToConvert)(fileToImport)) (targetFileWithCorrectName.withoutExtension + ".mp4").asFile
             else targetFileWithCorrectName
@@ -509,9 +510,14 @@ object PVTools extends App {
   private def alert(msg: String) = JOptionPane.showMessageDialog(null, msg)
 
   private def exifDateTime(file: File, exiftoolPath: String) = {
-    val exifCmd = exiftoolPath + " -T -DateTimeOriginal \"" + file + "\""
-
-    val res = exifCmd.executeAsProcessWithResult(Codec.ISO8859)
+    val params = List(
+    exiftoolPath    
+        , """-T"""
+        ,"""-DateTimeOriginal"""
+        ,s""""$file""""
+    )
+    val res = RuntimePlus.exec(params, Codec.ISO8859)
+    
     val exifDateTimeOption = res.output
     Log.debug("Result: " + exifDateTimeOption)
     if (exifDateTimeOption.nonEmpty) {
@@ -525,7 +531,7 @@ object PVTools extends App {
       Log.debug(s"find out date time of $file exifDateTime=$exifDateTime clearedExifDateTime=$clearedExifDateTime dateTime=$dateTime")
       dateTime
     } else {
-      Log.error("Error,        " + file + " " + exifCmd)
+      Log.error("Error,        " + file + " " + params)
       Log.error("Error, exit   " + file + " " + res.exitValue)
       Log.error("Error, output " + file + " " + res.output)
       Log.error("Error, error  " + file + " " + res.errorOutput)
