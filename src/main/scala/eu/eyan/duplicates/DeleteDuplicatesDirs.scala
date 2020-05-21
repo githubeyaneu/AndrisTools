@@ -173,34 +173,6 @@ class DeleteDuplicatesDirs {
     //    		log("Dirs size: " + dirsSum.toSize, Timer.timerElapsed);
 
     //// ÚJ
-    class DirFil()
-    case class Dir(dir: File) extends DirFil {}
-    case class Fil(fil: File) extends DirFil {
-      val size = fil.length
-    }
-    class DirsAndFiles() {
-      val dirs = Map[File, Dir]()
-      val fils = Map[File, Fil]()
-      def add(file: File) = this.synchronized {
-        if (file.existsAndDir && !dirs.contains(file)) dirs.put(file, Dir(file))
-        else if (file.existsAndFile && !fils.contains(file)) fils.put(file, Fil(file))
-      }
-    }
-
-    val dirsAndFiles = new DirsAndFiles()
-
-    var fileCt = 0L
-    var errorCt = 0L
-    var activeJobs = 0
-    var sum = 0L
-    val lock = new Object()
-    progress.setFormat("%d files and dirs")
-    progress.setMaximum(Int.MaxValue)
-
-    val maxJobs = Runtime.getRuntime.availableProcessors * 2
-    //with    dirsAndFiles.add: 1-92s, 2-69s, 3-66s, 4-67s
-    //without dirsAndFiles.add: 1-42s, 2-27s, 3-19s, 4-18s, 8-13s, 12-13s, 24-11s, 48-11s
-    val executor = Executors.newFixedThreadPool(maxJobs)
 
     //// Egész jó chunkolós
     //    val chunks = MutableList[List[File]]()
@@ -243,43 +215,131 @@ class DeleteDuplicatesDirs {
     //    }
     //// Egész jó chunkolós vége
 
-    val chunks = MutableList[Array[File]]()
+    //    class DirsAndFiles() {
+    //      val dirs = Map[File, Dir]()
+    //      val fils = Map[File, Fil]()
+    //      def add(file: File) = this.synchronized {
+    //        if (file.existsAndDir && !dirs.contains(file)) dirs.put(file, Dir(file))
+    //        else if (file.existsAndFile && !fils.contains(file)) fils.put(file, Fil(file))
+    //      }
+    //    }
+
+    //    val dirsAndFiles = new DirsAndFiles()
+
+    var fileCt = 0L
+    var errorCt = 0L
+    var activeJobs = 0
+    var sum = 0L
+    val lock = new Object()
+    progress.setFormat("%d files and dirs")
+    progress.setMaximum(Int.MaxValue)
+
+    val maxJobs = Runtime.getRuntime.availableProcessors * 2
+    //with    dirsAndFiles.add: 1-92s, 2-69s, 3-66s, 4-67s
+    //without dirsAndFiles.add: 1-42s, 2-27s, 3-19s, 4-18s, 8-13s, 12-13s, 24-11s, 48-11s
+    val executor = Executors.newFixedThreadPool(maxJobs)
+
+    class ParallelExecutor() {
+
+    }
+
+    val chunks = MutableList[Array[DirFil]]()
     val slideSize = 100
+    val par = new ParallelExecutor()
 
-    def explore(dirsOrFiles: Array[File]): Array[File] = {
-      val ret = dirsOrFiles.map(dirOrFile => {
+    type ParentDir = Option[Dir]
+
+    implicit class DirFilImplicit(file: File) {
+      def toDirFil(parent: ParentDir): DirFil = if (file.isFile) Fil(file, parent) else Dir(file, parent)
+    }
+    //    implicit class ArrayPlusImplicit[T](array: Array[T]) {
+    //      def appendIf(condition: => Boolean, toAppend: => Array[T]) = {
+    //        val ar1 = array
+    //        val ar2 = toAppend
+    //        if(condition) (ar1.++(ar2)) else ar1
+    //      }
+    //      //    	  if(condition) (array ++ toAppend) else array
+    //    }
+
+    class DirFil(parent: ParentDir) {
+      def isFile = this.isInstanceOf[Fil]
+      def isDirectory = this.isInstanceOf[Dir]
+      def hasParent = parent.nonEmpty
+      def asDir = this.asInstanceOf[Dir]
+      def asFil = this.asInstanceOf[Fil]
+      def listFiles = asDir.dir.listFiles
+    }
+    case class Dir(dir: File, parent: ParentDir) extends DirFil(parent) {}
+    case class Fil(fil: File, parent: ParentDir) extends DirFil(parent) {
+      val size = fil.length
+    }
+
+    //    def explore(dirsOrFiles: Array[(File, ParentDir)]): Array[DirFil] = {
+    //    		val ret = dirsOrFiles.map(dirOrFile => {
+    //    			lock.synchronized { fileCt += 1 }
+    //    			if (dirOrFile._1.isFile) {
+    //    				Array[DirFil](Fil(dirOrFile._1, dirOrFile._2))
+    //    			} else {
+    //    				val dirsParent = dirOrFile._2
+    //    						val dir = Dir(dirOrFile._1, dirsParent)
+    //    						val slided = dir.dir.listFiles.map(f => (f, Option(dir))).grouped(slideSize).toArray
+    //    						val slides = slided.map(slide => {
+    //    							if (activeJobs < maxJobs) {
+    //    								exploreAsync(slide)
+    //    								Array[DirFil]()
+    //    							} else {
+    //    								explore(slide)
+    //    							}
+    //    						}).flatten
+    //
+    //    						Array[DirFil](dir) ++ slides
+    //    			}
+    //    		})
+    //    				progress.valueChanged(fileCt.toInt)
+    //    				ret.flatten
+    //    }
+    //
+    //    def exploreAsync(dirsOrFiles: Array[(File, ParentDir)]): Unit = {
+    //    		lock.synchronized { activeJobs += 1 }
+    //    		executor.execute(RunnablePlus.runnable({
+    //    			try {
+    //    				val chunk = explore(dirsOrFiles)
+    //    						lock.synchronized { chunks += chunk }
+    //    			} finally lock.synchronized { activeJobs -= 1 }
+    //    		}))
+    //    }
+    def explore(dirsOrFiles: Array[DirFil]): Array[DirFil] = {
+      dirsOrFiles.map(dirOrFile => {
         lock.synchronized { fileCt += 1 }
-        if (dirOrFile.isFile) {
-          Array(dirOrFile)
-        } else {
-          val slided = dirOrFile.listFiles.grouped(slideSize).toArray
-          val slides = slided.map(slide => {
-            if (activeJobs < maxJobs) {
-              exploreAsync(slide)
-              Array[File]()
-            } else {
-              explore(slide)
-            }
-          }).flatten
-
-          Array(dirOrFile) ++ slides
-        }
-      })
-      progress.valueChanged(fileCt.toInt)
-      ret.flatten
+        if (dirOrFile.isFile) Array(dirOrFile)
+        else dirOrFile +: dirOrFile
+          .listFiles
+          .map(_.toDirFil(Option(dirOrFile.asDir)))
+          .grouped(slideSize)
+          .toArray
+          .map(runAsyncOrSync)
+          .flatten
+      }).flatten
     }
 
-    def exploreAsync(dirsOrFiles: Array[File]): Unit = {
-      lock.synchronized { activeJobs += 1 }
-      executor.execute(RunnablePlus.runnable({
-        try {
-          val chunk = explore(dirsOrFiles)
-          lock.synchronized { chunks += chunk }
-        } finally lock.synchronized { activeJobs -= 1 }
-      }))
+    def runAsyncOrSync(slide: Array[DirFil]): Array[DirFil] = {
+      if (activeJobs < maxJobs) {
+        lock.synchronized { activeJobs += 1 }
+        executor.execute(RunnablePlus.runnable({
+          try {
+            val chunk = explore(slide)
+            lock.synchronized { chunks += chunk }
+            progress.valueChanged(fileCt.toInt)
+          } finally lock.synchronized { activeJobs -= 1 }
+        }))
+        Array[DirFil]()
+      } else {
+        explore(slide)
+      }
     }
 
-    exploreAsync(dirPaths.map(_.asDir).toArray)
+    runAsyncOrSync(dirPaths.map(_.asDir.toDirFil(None)).toArray)
+
     while (activeJobs > 0) {
       Thread.sleep(1000)
       log(activeJobs + "", Thread.activeCount() + "")
@@ -291,15 +351,19 @@ class DeleteDuplicatesDirs {
     log("Errors: ", errorCt)
     log("Chunks: ", chunks.size)
 
-    val files = chunks.flatten
-    log("Flatten", Timer.timerElapsed)
-    val filesL = files.toList
-    log("Flattened toList", Timer.timerElapsed)
-    log("Size (678009 ?)", filesL.size)
-    log("Files (596734 ?)", filesL.filter(_.isFile).size)
-    log("Dirs (81275 ?)", filesL.filter(_.isDirectory).size)
+    val filesL = chunks.flatten.toList
+    log("ParentCount", filesL.filter(_.hasParent).size)
     log("fileCt: ", fileCt)
-    log("Windows - Desktop", 596734, 81275, 678009)
+
+    log("Chunks", "Size: ", filesL.size, "Files: ", filesL.filter(_.isFile).size, "Dirs: ", filesL.filter(_.isDirectory).size)
+    log("Chunks", "Bytes", formatNr(filesL.filter(_.isFile).map(_.asFil.size).sum))
+
+    val filesAndDirsStreams = dirPaths.flatMap(_.asDir.fileTreeWithItself)
+    val fds = filesAndDirsStreams.partition(_.isFile)
+    val fSizes = fds._1.map(_.length).toList
+    val ds = fds._2.toList
+    log("REAL ", "Size: ", fSizes.size + ds.size, "Files: ", fSizes.size, "Dirs: ", ds.size)
+    log("REAL ", "Bytes", formatNr(fSizes.sum))
 
     //    log("Dirs found: " + dirsAndFiles.dirs.size, Timer.timerElapsed);
     //    log("Files found: " + dirsAndFiles.fils.size, Timer.timerElapsed);
@@ -322,6 +386,9 @@ class DeleteDuplicatesDirs {
   }, isInProgress.onNext(false))
 
   private def log(msg: Any*) = logs.appendLater(msg.mkString(" ") + N)
+  private def formatNr(nr: Long) = {
+    (" " * ((3 - nr.toString.length % 3) % 3) + nr).grouped(3).mkString(" ")
+  }
 
   //  private def findDuplicates(withDelete: Boolean) = SwingPlus.runInWorker ({
   //
