@@ -503,7 +503,7 @@ class PVToolsContent {
         ,"""-DateTimeOriginal"""
         ,s""""$file""""
     )
-    val res = RuntimePlus.exec(params, Codec.ISO8859)
+    val res = RuntimePlus.exec(params.mkString(" ")/*FIXME delete .mkString(" ")*/, Codec.ISO8859)
     
     val exifDateTimeOption = res.output
     Log.debug("Result: " + exifDateTimeOption)

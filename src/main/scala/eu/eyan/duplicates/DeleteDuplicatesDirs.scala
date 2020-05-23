@@ -24,6 +24,10 @@ import java.util.concurrent.Executors
 import eu.eyan.util.java.lang.RunnablePlus
 import java.util.concurrent.TimeUnit
 import scala.collection.mutable.MutableList
+import eu.eyan.log.Log
+import scala.concurrent.duration.Duration
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 object DeleteDuplicatesDirs {
   val TITLE = "Delete duplicates dirs"
@@ -33,16 +37,16 @@ class DeleteDuplicatesDirs {
   panel.newColumn.newColumnFPG
   val N = "\n"
   panel.addSeparatorWithTitle("Directories to search")
-  val dirs = new MultiFieldJTextFieldWithCheckbox("dirsToSearch", 50)
-  dirs.setValues(List(("", false, false)))
-  dirs.rememberValueInRegistry("dirsToSearch")
+  val dirsMultiField = new MultiFieldJTextFieldWithCheckbox("dirsToSearch", 50)
+  dirsMultiField.setValues(List(("", false, false)))
+  dirsMultiField.rememberValueInRegistry("dirsToSearch")
 
-  panel.newRow.add(dirs)
+  panel.newRow.add(dirsMultiField)
 
   val findPanel = new JPanelWithFrameLayout().withSeparators
   //val minSize = findPanel.addLabelFluent("Min bytes:").newColumn.addTextField("", 7).rememberValueInRegistry("minSize")
   val findPanelButton = findPanel.newColumnFPG.addButton("Find duplicates").onAction(findDuplicates(false))
-  val fullHash = findPanel.newColumn.addCheckBox("Full hash")
+  val fullHashCheckbox = findPanel.newColumn.addCheckBox("Full hash")
   panel.newRow.add(findPanel)
 
   val deletePanel = new JPanelWithFrameLayout().withSeparators
@@ -66,7 +70,7 @@ class DeleteDuplicatesDirs {
   isInProgress.subscribe(pr => invokeLater(findPanelButton.setEnabled(!pr)))
   isInProgress.combineLatest(isAllowDeleteSelected).subscribe(prAll => invokeLater(deleteDuplicatesButton.setEnabled(prAll._2 && !prAll._1)))
 
-  dirs.onChanged(() => Option(SwingUtilities.windowForComponent(panel)).map(_.asInstanceOf[JFrame]).foreach(_.resizeAndBack))
+  dirsMultiField.onChanged(() => Option(SwingUtilities.windowForComponent(panel)).map(_.asInstanceOf[JFrame]).foreach(_.resizeAndBack))
 
   //  val p1 = """C:\Users\NemAdmin\Desktop\Osztott"""
   //  val p2 = """C:\Users\NemAdmin\Desktop\2020 02 29 régi Win7 120GB"""
@@ -140,11 +144,11 @@ class DeleteDuplicatesDirs {
   private def findDuplicates(withDelete: Boolean) = SwingPlus.runInWorker({
     Timer.timerStart
     invokeLater(logs.setText(""))
-    if (withDelete) dirs.clearAllowDelete
+    if (withDelete) dirsMultiField.clearAllowDelete
     isInProgress.onNext(true)
     isAllowDeleteSelected.onNext(false)
-    val deletablePaths = dirs.getValues.filter(_._2).map(_._1)
-    val dirPaths = dirs.getValues.filter(_._3).map(_._1).toStream
+    val deletablePaths = dirsMultiField.getValues.filter(_._2).map(_._1)
+    val dirPaths = dirsMultiField.getValues.filter(_._3).map(_._1).toStream
 
     //        val filesAndDirsStreams = dirPaths.flatMap(_.asDir.fileTreeWithItself)
     //        var fileCt2 = 0L
@@ -226,26 +230,10 @@ class DeleteDuplicatesDirs {
 
     //    val dirsAndFiles = new DirsAndFiles()
 
-    var fileCt = 0L
-    var errorCt = 0L
-    var activeJobs = 0
-    var sum = 0L
-    val lock = new Object()
-    progress.setFormat("%d files and dirs")
+    //    var sum = 0L
+
+    progress.setFormat("%,d files and dirs")
     progress.setMaximum(Int.MaxValue)
-
-    val maxJobs = Runtime.getRuntime.availableProcessors * 2
-    //with    dirsAndFiles.add: 1-92s, 2-69s, 3-66s, 4-67s
-    //without dirsAndFiles.add: 1-42s, 2-27s, 3-19s, 4-18s, 8-13s, 12-13s, 24-11s, 48-11s
-    val executor = Executors.newFixedThreadPool(maxJobs)
-
-    class ParallelExecutor() {
-
-    }
-
-    val chunks = MutableList[Array[DirFil]]()
-    val slideSize = 100
-    val par = new ParallelExecutor()
 
     type ParentDir = Option[Dir]
 
@@ -263,13 +251,27 @@ class DeleteDuplicatesDirs {
 
     class DirFil(parent: ParentDir) {
       def isFile = this.isInstanceOf[Fil]
+      def isFileOption = if (isFile) Option(this) else None
       def isDirectory = this.isInstanceOf[Dir]
+      def isDirectoryOption = if (isDirectory) Option(this) else None
       def hasParent = parent.nonEmpty
       def asDir = this.asInstanceOf[Dir]
       def asFil = this.asInstanceOf[Fil]
-      def listFiles = asDir.dir.listFiles
+      def listFiles = {
+        val files = asDir.dir.listFiles;
+        if (files == null) {
+          Log.error("null received from listFiles of " + asDir.dir); Array[File]()
+        } else files
+      }
+      def getParent = parent
+
+      parent.foreach(_.addChild(this))
     }
-    case class Dir(dir: File, parent: ParentDir) extends DirFil(parent) {}
+    case class Dir(dir: File, parent: ParentDir) extends DirFil(parent) {
+      val children = MutableList[DirFil]()
+      def addChild(dirFil: DirFil) = children.synchronized { children += dirFil }
+    }
+
     case class Fil(fil: File, parent: ParentDir) extends DirFil(parent) {
       val size = fil.length
     }
@@ -308,124 +310,105 @@ class DeleteDuplicatesDirs {
     //    			} finally lock.synchronized { activeJobs -= 1 }
     //    		}))
     //    }
-    def explore(dirsOrFiles: Array[DirFil]): Array[DirFil] = {
-      dirsOrFiles.map(dirOrFile => {
-        lock.synchronized { fileCt += 1 }
-        if (dirOrFile.isFile) Array(dirOrFile)
-        else dirOrFile +: dirOrFile
-          .listFiles
-          .map(_.toDirFil(Option(dirOrFile.asDir)))
-          .grouped(slideSize)
-          .toArray
-          .map(runAsyncOrSync)
-          .flatten
-      }).flatten
+
+    val lock = new Object()
+    type Chunk = Array[DirFil]
+    val fileCt$ = BehaviorSubject(0)
+    val fileCt = new AtomicInteger
+    fileCt$.sample(Duration(30, TimeUnit.MILLISECONDS)).subscribe(progress.valueChanged(_))
+
+    val chunkSize = 100
+    def explore(dirsOrFiles: Chunk, syncOrAsync: Chunk => Option[Chunk]): Chunk = {
+      dirsOrFiles
+        .map(dirOrFile => {
+          dirOrFile +:
+            dirOrFile
+            .isDirectoryOption
+            .map(_
+              .listFiles
+              .map(_.toDirFil(Option(dirOrFile.asDir)))
+              .grouped(chunkSize)
+              .toArray
+              .map(syncOrAsync)
+              .map(_.getOrElse(Array[DirFil]()))
+              .flatten)
+            .getOrElse(Array())
+        })
+        .map(df => { fileCt$.onNext(fileCt.incrementAndGet); df })
+        .flatten
     }
 
-    def runAsyncOrSync(slide: Array[DirFil]): Array[DirFil] = {
-      if (activeJobs < maxJobs) {
-        lock.synchronized { activeJobs += 1 }
-        executor.execute(RunnablePlus.runnable({
-          try {
-            val chunk = explore(slide)
-            lock.synchronized { chunks += chunk }
-            progress.valueChanged(fileCt.toInt)
-          } finally lock.synchronized { activeJobs -= 1 }
-        }))
-        Array[DirFil]()
-      } else {
-        explore(slide)
-      }
-    }
+    log(dirPaths.mkString)
+    val chunks = new ParallelExecutor(explore).executeAndWaitUntilDone(dirPaths.map(_.asDir.toDirFil(None)).toArray)
 
-    runAsyncOrSync(dirPaths.map(_.asDir.toDirFil(None)).toArray)
-
-    while (activeJobs > 0) {
-      Thread.sleep(1000)
-      log(activeJobs + "", Thread.activeCount() + "")
-    }
-    progress.valueChanged(fileCt.toInt)
-    executor.shutdown
-    executor.awaitTermination(1, TimeUnit.HOURS)
     log("Explore done", Timer.timerElapsed)
-    log("Errors: ", errorCt)
-    log("Chunks: ", chunks.size)
+    //    log("Chunks: ", chunks.size)
 
-    val filesL = chunks.flatten.toList
-    log("ParentCount", filesL.filter(_.hasParent).size)
-    log("fileCt: ", fileCt)
+    val dirFils = chunks.flatten.toList
+    //    log("ParentCount", dirFils.filter(_.hasParent).size.format)
 
-    log("Chunks", "Size: ", filesL.size, "Files: ", filesL.filter(_.isFile).size, "Dirs: ", filesL.filter(_.isDirectory).size)
-    log("Chunks", "Bytes", formatNr(filesL.filter(_.isFile).map(_.asFil.size).sum))
+    val files = dirFils.filter(_.isFile).map(_.asFil)
+    val dirs = dirFils.filter(_.isDirectory).map(_.asDir)
 
-    val filesAndDirsStreams = dirPaths.flatMap(_.asDir.fileTreeWithItself)
-    val fds = filesAndDirsStreams.partition(_.isFile)
-    val fSizes = fds._1.map(_.length).toList
-    val ds = fds._2.toList
-    log("REAL ", "Size: ", fSizes.size + ds.size, "Files: ", fSizes.size, "Dirs: ", ds.size)
-    log("REAL ", "Bytes", formatNr(fSizes.sum))
+    //    log("Chunks", "Size: ", dirFils.size.format, "Files: ", files.size.format, "Dirs: ", dirs.size.format)
+    //    log("Chunks", "Bytes", dirFils.filter(_.isFile).map(_.asFil.size).sum.format, Timer.timerElapsed)
 
-    //    log("Dirs found: " + dirsAndFiles.dirs.size, Timer.timerElapsed);
-    //    log("Files found: " + dirsAndFiles.fils.size, Timer.timerElapsed);
-    //
-    //    log("Files size: " + dirsAndFiles.fils.values.map(_.size).sum.toSize, Timer.timerElapsed);
-    ////ÚJ vége
+    //    log("children " + dirFils.filter(_.isDirectory).map(_.asDir.children.size).sum, Timer.timerElapsed)
 
-    //    val dirsSum = filesAndDirs.filter(_.isDirectory()).map(_.length).sum
-    //		log("Dirs size: " + dirsSum.toSize, Timer.timerElapsed);
+    // REAL
+    //        val filesAndDirsStreams = dirPaths.flatMap(_.asDir.fileTreeWithItself)
+    //        val fds = filesAndDirsStreams.partition(_.isFile)
+    //        val fSizes = fds._1.map(_.length).toList
+    //        val ds = fds._2.toList
+    //        log("REAL ", "Size: ", (fSizes.size + ds.size).format, "Files: ", fSizes.size.format, "Dirs: ", ds.size.format)
+    //        log("REAL ", "Bytes", fSizes.sum.format)
 
-    /*
- * Orig
-    Stream 11ms
-    List 39s
-    Distinct 2s
-    Files found: 678010 15ms
-    Files size: 236GB 1min
-    Dirs size: 293MB 35s
-*/
+    val filesBySizeGroups = files.groupBy(_.size)
+    log("File size groups ", filesBySizeGroups.size.format, Timer.timerElapsed)
+
+    val filesSingle = filesBySizeGroups.filter(_._2.size == 1).values.flatten.toList
+    log("Single files", filesSingle.size.format, "size", filesSingle.map(_.size).sum.toSize, Timer.timerElapsed)
+
+    val filesMultiGroups = filesBySizeGroups.filter(_._2.size != 1).values.toList.sortWith((l1, l2) => l1.head.size < l2.head.size)
+    val multiFilesCt = filesMultiGroups.flatten.size
+    val multiFilesSum = filesMultiGroups.flatten.map(_.size).sum
+    log("Multi files", filesMultiGroups.flatten.size.format, "size", multiFilesSum.toSize, Timer.timerElapsed)
+
+    val fullHash = fullHashCheckbox.isSelected
+    progress.setMaximum(if (fullHash) (multiFilesSum / 1000000L).toInt else multiFilesCt)
+    progress.setFormat("%,d")
+    progress.valueChanged(0)
+
+    val hashReadCount = new AtomicInteger
+    val hashReadCount$ = BehaviorSubject(0)
+    if (!fullHash) hashReadCount$.sample(Duration(30, TimeUnit.MILLISECONDS)).subscribe(progress.valueChanged(_))
+
+    val hashReadProgress = new AtomicLong
+    val hashReadProgress$ = BehaviorSubject(0L)
+    def updateProgress(readBytes: Long) = hashReadProgress$.onNext(hashReadProgress.addAndGet(readBytes))
+    if (fullHash) hashReadProgress$.sample(Duration(30, TimeUnit.MILLISECONDS)).subscribe(hashReadProgress => {
+      progress.setString(hashReadProgress.toSize)
+      progress.setValue((hashReadProgress / 1000000).toInt)
+    })
+
+    filesMultiGroups.foreach { group =>
+      val hashGroups = group.groupBy(f =>
+        try if (fullHash) f.fil.hashFull(updateProgress)
+        else if (hashFastCache.contains(f.fil)) hashFastCache({ updateProgress(f.size); f.fil })
+        else hashFastCache.getOrElseUpdate(f.fil, f.fil.hashFast(updateProgress))
+        finally hashReadCount$.onNext(hashReadCount.incrementAndGet))
+    }
+    log("Hashing done", Timer.timerElapsed)
+
   }, isInProgress.onNext(false))
 
-  private def log(msg: Any*) = logs.appendLater(msg.mkString(" ") + N)
-  private def formatNr(nr: Long) = {
-    (" " * ((3 - nr.toString.length % 3) % 3) + nr).grouped(3).mkString(" ")
-  }
-
   //  private def findDuplicates(withDelete: Boolean) = SwingPlus.runInWorker ({
-  //
-  //    val fileGroupsByLength = files.groupBy(_.length())
-  //
-  //    val filesSingle = fileGroupsByLength.filter(_._2.size == 1).values.flatten.toList
-  //
-  //    val filesMultiGroups = fileGroupsByLength.filter(_._2.size != 1).values.toList.sortWith((l1, l2) => l1.head.length < l2.head.length)
-  //
-  //    val filesSingleSum = filesSingle.map(_.length).sum
-  //    val filesMultiGroupsSum = filesMultiGroups.flatten.map(_.length).sum
-  //
-  //    logs.appendLater("Files found: " + files.size + ", Size: " + filesSum.toSize + N)
-  //    logs.appendLater("Single: " + filesSingle.size + ", Size single: " + filesSingleSum.toSize +  N)
-  //    logs.appendLater("Multi : " + filesMultiGroups.flatten.size + " (" + filesMultiGroups.size + " groups), Size multi:" + filesMultiGroupsSum.toSize +  N)
-  //
-  //    progress.setFormat("")
-  //    progress.valueChanged(0)
-  //
-  //    var sum = 0L
-  //
-  //    def updateProgress(readBytes: Long) = {
-  //      sum += readBytes
-  //      progress.setString(sum.toSize)
-  //    }
   //
   //    var remainingFilesCt = 0
   //    var deleteCt = 0
   //
   //    val dirsContainingDuplicates = mutable.Set[File]()
   //
-  //    filesMultiGroups.foreach { group =>
-  //      val hashGroups = group.groupBy(f =>
-  //        if (fullHash.isSelected) f.hashFull(updateProgress)
-  //        else if (hashFastCache.contains(f)) hashFastCache({updateProgress(f.length); f})
-  //        else hashFastCache.getOrElseUpdate(f, f.hashFast(updateProgress))
-  //      )
   //
   //
   //      hashGroups.foreach { hashFiles =>
@@ -464,4 +447,13 @@ class DeleteDuplicatesDirs {
   //
   //
   //  })
+
+  private def log(msg: Any*) = logs.appendLater(msg.mkString(" ") + N)
+  implicit class IntPlus(i: Int) {
+    def format = String.format("%,d", i: Integer)
+  }
+  implicit class LongPlus(l: Long) {
+    def format = String.format("%,d", l.asInstanceOf[Object])
+  }
+
 }
