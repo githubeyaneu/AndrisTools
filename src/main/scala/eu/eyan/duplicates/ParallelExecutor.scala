@@ -16,7 +16,7 @@ class ParallelExecutor[T](processJob: (T, T => Option[T]) => T) {
   val pool = Executors.newFixedThreadPool(maxJobs)
   val chunks = MutableList[T]()
 
-  def runAsyncOrSync(job: T): Option[T] = {
+  private def runAsyncOrSync(job: T): Option[T] = {
     if (activeJobs.get < maxJobs) {
       activeJobs.incrementAndGet
       pool.execute(RunnablePlus.runnable({

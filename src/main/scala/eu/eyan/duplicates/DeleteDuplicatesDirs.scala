@@ -28,6 +28,8 @@ import eu.eyan.log.Log
 import scala.concurrent.duration.Duration
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import eu.eyan.util.scala.TryCatch
+import eu.eyan.util.scala.TryCatchFinally
 
 object DeleteDuplicatesDirs {
   val TITLE = "Delete duplicates dirs"
@@ -249,33 +251,6 @@ class DeleteDuplicatesDirs {
     //      //    	  if(condition) (array ++ toAppend) else array
     //    }
 
-    class DirFil(parent: ParentDir) {
-      def isFile = this.isInstanceOf[Fil]
-      def isFileOption = if (isFile) Option(this) else None
-      def isDirectory = this.isInstanceOf[Dir]
-      def isDirectoryOption = if (isDirectory) Option(this) else None
-      def hasParent = parent.nonEmpty
-      def asDir = this.asInstanceOf[Dir]
-      def asFil = this.asInstanceOf[Fil]
-      def listFiles = {
-        val files = asDir.dir.listFiles;
-        if (files == null) {
-          Log.error("null received from listFiles of " + asDir.dir); Array[File]()
-        } else files
-      }
-      def getParent = parent
-
-      parent.foreach(_.addChild(this))
-    }
-    case class Dir(dir: File, parent: ParentDir) extends DirFil(parent) {
-      val children = MutableList[DirFil]()
-      def addChild(dirFil: DirFil) = children.synchronized { children += dirFil }
-    }
-
-    case class Fil(fil: File, parent: ParentDir) extends DirFil(parent) {
-      val size = fil.length
-    }
-
     //    def explore(dirsOrFiles: Array[(File, ParentDir)]): Array[DirFil] = {
     //    		val ret = dirsOrFiles.map(dirOrFile => {
     //    			lock.synchronized { fileCt += 1 }
@@ -311,7 +286,34 @@ class DeleteDuplicatesDirs {
     //    		}))
     //    }
 
-    val lock = new Object()
+    class DirFil(parent: ParentDir) {
+      def isFile = this.isInstanceOf[Fil]
+      def isFileOption = if (isFile) Option(this) else None
+      def isDirectory = this.isInstanceOf[Dir]
+      def isDirectoryOption = if (isDirectory) Option(this) else None
+      def hasParent = parent.nonEmpty
+      def asDir = this.asInstanceOf[Dir]
+      def asFil = this.asInstanceOf[Fil]
+      def listFiles = {
+        val files = asDir.dir.listFiles;
+        if (files == null) {
+          Log.error("null received from listFiles of " + asDir.dir); Array[File]()
+        } else files
+      }
+      def getParent = parent
+      var hash: Option[String] = None
+
+      parent.foreach(_.addChild(this))
+    }
+    case class Dir(dir: File, parent: ParentDir) extends DirFil(parent) {
+      val children = MutableList[DirFil]()
+      def addChild(dirFil: DirFil) = children.synchronized { children += dirFil }
+    }
+
+    case class Fil(fil: File, parent: ParentDir) extends DirFil(parent) {
+      val size = fil.length
+    }
+
     type Chunk = Array[DirFil]
     val fileCt$ = BehaviorSubject(0)
     val fileCt = new AtomicInteger
@@ -370,35 +372,60 @@ class DeleteDuplicatesDirs {
     log("Single files", filesSingle.size.format, "size", filesSingle.map(_.size).sum.toSize, Timer.timerElapsed)
 
     val filesMultiGroups = filesBySizeGroups.filter(_._2.size != 1).values.toList.sortWith((l1, l2) => l1.head.size < l2.head.size)
-    val multiFilesCt = filesMultiGroups.flatten.size
-    val multiFilesSum = filesMultiGroups.flatten.map(_.size).sum
-    log("Multi files", filesMultiGroups.flatten.size.format, "size", multiFilesSum.toSize, Timer.timerElapsed)
+    val multiFiles = filesMultiGroups.flatten
+    val multiFilesCt = multiFiles.size
+    val multiFilesSum = multiFiles.map(_.size).sum
+    log("Multi files", multiFilesCt.format, "size", multiFilesSum.toSize, Timer.timerElapsed)
 
     val fullHash = fullHashCheckbox.isSelected
-    progress.setMaximum(if (fullHash) (multiFilesSum / 1000000L).toInt else multiFilesCt)
-    progress.setFormat("%,d")
-    progress.valueChanged(0)
-
     val hashReadCount = new AtomicInteger
     val hashReadCount$ = BehaviorSubject(0)
-    if (!fullHash) hashReadCount$.sample(Duration(30, TimeUnit.MILLISECONDS)).subscribe(progress.valueChanged(_))
-
     val hashReadProgress = new AtomicLong
     val hashReadProgress$ = BehaviorSubject(0L)
     def updateProgress(readBytes: Long) = hashReadProgress$.onNext(hashReadProgress.addAndGet(readBytes))
-    if (fullHash) hashReadProgress$.sample(Duration(30, TimeUnit.MILLISECONDS)).subscribe(hashReadProgress => {
-      progress.setString(hashReadProgress.toSize)
-      progress.setValue((hashReadProgress / 1000000).toInt)
+
+    progress.valueChanged(0)
+    if (fullHash) {
+      progress.setMaximum((multiFilesSum / 1000000L).toInt)
+      hashReadProgress$.sample(Duration(30, TimeUnit.MILLISECONDS)).subscribe(hashReadProgress => {
+        progress.setString(hashReadProgress.toSize)
+        progress.setValue((hashReadProgress / 1000000).toInt)
+      })
+    } else {
+      progress.setMaximum(multiFilesCt)
+      progress.setFormat("%,d")
+      hashReadCount$.sample(Duration(30, TimeUnit.MILLISECONDS)).subscribe(progress.valueChanged(_))
+    }
+
+    multiFiles.par.foreach(f => {
+      val hash = TryCatchFinally(
+        if (fullHash) Some(f.fil.hashFull(updateProgress))
+        else Some(f.fil.hashFast(updateProgress)),
+        //        else if (hashFastCache.contains(f.fil)) Some(hashFastCache({ updateProgress(f.size); f.fil }))
+        //        else Some(hashFastCache.getOrElseUpdate(f.fil, f.fil.hashFast(updateProgress))),
+        (t: Throwable) => { Log.error(t); None },
+        hashReadCount$.onNext(hashReadCount.incrementAndGet))
+      f.hash = hash
     })
 
-    filesMultiGroups.foreach { group =>
-      val hashGroups = group.groupBy(f =>
-        try if (fullHash) f.fil.hashFull(updateProgress)
-        else if (hashFastCache.contains(f.fil)) hashFastCache({ updateProgress(f.size); f.fil })
-        else hashFastCache.getOrElseUpdate(f.fil, f.fil.hashFast(updateProgress))
-        finally hashReadCount$.onNext(hashReadCount.incrementAndGet))
-    }
     log("Hashing done", Timer.timerElapsed)
+
+    def fillDirs() {
+      val dirsToFill = dirs.filter(_.hash.isEmpty).filter(_.children.nonEmpty)
+      val dirsAllChildrenWithHash = dirsToFill.filter(_.children.forall(_.hash.nonEmpty))
+      log("fillDirs", dirsAllChildrenWithHash.size)
+      if (dirsAllChildrenWithHash.size > 0) {
+        dirsAllChildrenWithHash.foreach(dir => {
+          dir.hash = Some(dir.children.map(_.hash.get).sorted.mkString(""))
+        })
+        fillDirs
+      }
+    }
+    fillDirs
+    log("fillDirsDone", "")
+    
+    val hashGroups = dirFils.filter(_.hash.nonEmpty).groupBy(_.hash.get)
+    log("Hashgroups done", hashGroups.size, Timer.timerElapsed)
 
   }, isInProgress.onNext(false))
 
