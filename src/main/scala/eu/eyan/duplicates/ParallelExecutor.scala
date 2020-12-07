@@ -2,21 +2,24 @@ package eu.eyan.duplicates
 
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+
 import eu.eyan.util.java.lang.RunnablePlus
 import eu.eyan.log.Log
-import scala.collection.mutable.MutableList
+
 import java.util.concurrent.atomic.AtomicInteger
 
-class ParallelExecutor[T](processJob: (T, T => Option[T]) => T) {
+import scala.collection.mutable
+
+class ParallelExecutor[T](processJob: (T, T => T) => T, returnValueInAsyncCase: => T) {
 
   val lock = new Object
   val activeJobs = new AtomicInteger
 
   val maxJobs = Runtime.getRuntime.availableProcessors * 15 / 10
   val pool = Executors.newFixedThreadPool(maxJobs)
-  val chunks = MutableList[T]()
+  val chunks = mutable.MutableList[T]()
 
-  private def runAsyncOrSync(job: T): Option[T] = {
+  private def runAsyncOrSync(job: T): T = {
     if (activeJobs.get < maxJobs) {
       activeJobs.incrementAndGet
       pool.execute(RunnablePlus.runnable({
@@ -25,8 +28,8 @@ class ParallelExecutor[T](processJob: (T, T => Option[T]) => T) {
           lock.synchronized { chunks += chunk }
         } finally activeJobs.decrementAndGet
       }))
-      None
-    } else Some(processJob(job, runAsyncOrSync))
+      returnValueInAsyncCase
+    } else processJob(job, runAsyncOrSync)
     
   }
 
@@ -38,7 +41,7 @@ class ParallelExecutor[T](processJob: (T, T => Option[T]) => T) {
       time += 10
       if (time % 1000 == 0) Log.info("Running threads " + activeJobs + " of " + Thread.activeCount) // FIXME make it debug/trace level
     }
-    pool.shutdown
+    pool.shutdown()
     pool.awaitTermination(1, TimeUnit.HOURS)
     chunks.toList
   }

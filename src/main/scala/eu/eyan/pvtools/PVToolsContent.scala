@@ -144,7 +144,7 @@ class PVToolsContent {
   val panel = JPanelBuilder().withBorders.withSeparators
     .newColumn.newColumnFPG
 
-    .newRow("f:p").addLabel.text("Import path: ").cursor_HAND_CURSOR.onMouseClicked(importPathClicked)
+    .newRow("f:p").addLabel.text("Import pathes: ").cursor_HAND_CURSOR.onMouseClicked(importPathClicked)
     .nextColumn.addTextFieldMulti("importPathTextField", 30).setValues(List()).remember("importPathTextFields").onChanged(importPaths.pam(ImportPathTexts(_)))
 
     .newRow.addLabel.text("Export path: ").cursor_HAND_CURSOR.onMouseClicked(exportPathClicked)

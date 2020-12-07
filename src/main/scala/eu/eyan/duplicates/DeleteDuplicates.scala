@@ -21,6 +21,7 @@ import javax.swing.SwingUtilities
 
 class TextFieldWithCheckBox(size: Int) extends JPanelWithFrameLayout {
   withSeparators
+  newColumnFPG
   val textField = addTextField("", size)
   val include = newColumn.addCheckBox("Include")
   val checkBox = newColumn.addCheckBox("Allow to delete")
@@ -34,7 +35,7 @@ class TextFieldWithCheckBox(size: Int) extends JPanelWithFrameLayout {
 }
 //FIXME store in registry on delete line
 class MultiFieldJTextFieldWithCheckbox(columnName: String, columns: Int = 0) extends MultiField[(String, Boolean, Boolean), TextFieldWithCheckBox](columnName) {
-  def clearAllowDelete = invokeLater(editors.foreach(_.editor.checkBox.setSelected(false)))
+  def clearAllowDelete() = invokeLater(editors.foreach(_.editor.checkBox.setSelected(false)))
 
   protected def createEditor(fieldEdited: TextFieldWithCheckBox => Unit) = {
     val editor = new TextFieldWithCheckBox(columns)
@@ -107,7 +108,7 @@ class DeleteDuplicates {
 
   private def findDuplicates(withDelete: Boolean) = SwingPlus.runInWorker ({
     invokeLater (logs.setText(""))
-    if(withDelete) dirs.clearAllowDelete
+    if(withDelete) dirs.clearAllowDelete()
     isInProgress.onNext(true)
     isAllowDeleteSelected.onNext(false)
 
