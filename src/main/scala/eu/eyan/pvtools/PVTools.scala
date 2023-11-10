@@ -1,51 +1,35 @@
 package eu.eyan.pvtools
 
-import java.awt.{ Color, Desktop }
-import java.io.File
-import java.net.{ URI, URLEncoder }
-import java.nio.file.Files
-import java.nio.file.attribute.FileTime
-
-import eu.eyan.log.{ Log, LogWindow }
-import eu.eyan.util.awt.clipboard.ClipboardPlus
-import eu.eyan.util.io.FilePlus.FilePlusImplicit
-import eu.eyan.util.java.time.InstantPlus.InstantImplicit
-import eu.eyan.util.registry.RegistryPlus
-import eu.eyan.util.scala.collection.TraversableOncePlus.TraversableOnceImplicit
-import eu.eyan.util.string.StringPlus.StringPlusImplicit
-import eu.eyan.util.swing.JButtonPlus.JButtonImplicit
-import eu.eyan.util.swing.JFramePlus.JFramePlusImplicit
-import eu.eyan.util.swing.JLabelPlus.JLabelImplicit
-import eu.eyan.util.swing.JPanelWithFrameLayout
-import eu.eyan.util.swing.JTextFieldPlus.JTextFieldPlusImplicit
-import eu.eyan.util.swing.JToggleButtonPlus.JToggleButtonImplicit
-import javax.swing.{ JFrame, JOptionPane, JScrollPane }
-
-import scala.io.Codec
-import eu.eyan.util.java.lang.IntPlus.IntImplicit
-import eu.eyan.util.scala.Try
-import eu.eyan.util.scala.TryCatch
-import rx.lang.scala.subjects.BehaviorSubject
-import eu.eyan.util.rx.lang.scala.ObservablePlus
-import eu.eyan.util.rx.lang.scala.ObservablePlus.ObservableImplicitBoolean
-import eu.eyan.util.swing.SwingPlus
-import java.awt.Dimension
-import eu.eyan.util.scala.LongPlus.LongImplicit
-import eu.eyan.util.swing.panelbuilder.JPanelBuilder
-import javax.swing.JPanel
-import com.jgoodies.forms.layout.FormLayout
-import com.jgoodies.forms.factories.CC
-import javax.swing.JLabel
-import eu.eyan.util.rx.lang.scala.subjects.BehaviorSubjectPlus.BehaviorSubjectImplicit
-import eu.eyan.util.rx.lang.scala.subjects.BehaviorSubjectPlus.BehaviorSubjectImplicitT
-import rx.lang.scala.Observable
-import eu.eyan.util.rx.lang.scala.ObservablePlus.ObservableImplicitT
+import eu.eyan.log.{Log, LogWindow}
 import eu.eyan.pvtools.FFMPegPlus._
-import eu.eyan.util.rx.lang.scala.ObserverPlus.ObserverImplicit
-import eu.eyan.util.swing.panelbuilder.Click
 import eu.eyan.pvtools.FFMpegParam._
 import eu.eyan.pvtools.FFMpegVideoParam._
+import eu.eyan.util.awt.clipboard.ClipboardPlus
+import eu.eyan.util.io.FilePlus.FilePlusImplicit
+import eu.eyan.util.java.lang.IntPlus.IntImplicit
 import eu.eyan.util.java.lang.RuntimePlus
+import eu.eyan.util.java.time.InstantPlus.InstantImplicit
+import eu.eyan.util.registry.RegistryPlus
+import eu.eyan.util.rx.lang.scala.ObservablePlus
+import eu.eyan.util.rx.lang.scala.ObservablePlus.ObservableImplicitBoolean
+import eu.eyan.util.rx.lang.scala.ObserverPlus.ObserverImplicit
+import eu.eyan.util.rx.lang.scala.subjects.BehaviorSubjectPlus.BehaviorSubjectImplicitT
+import eu.eyan.util.scala.LongPlus.LongImplicit
+import eu.eyan.util.scala.TryCatch
+import eu.eyan.util.scala.collection.TraversableOncePlus.TraversableOnceImplicit
+import eu.eyan.util.string.StringPlus.StringPlusImplicit
+import eu.eyan.util.swing.JFramePlus.JFramePlusImplicit
+import eu.eyan.util.swing.SwingPlus
+import eu.eyan.util.swing.panelbuilder.{Click, JPanelBuilder}
+import rx.lang.scala.subjects.BehaviorSubject
+
+import java.awt.{Color, Desktop}
+import java.io.File
+import java.net.{URI, URLEncoder}
+import java.nio.file.Files
+import java.nio.file.attribute.FileTime
+import javax.swing.{JFrame, JOptionPane, JScrollPane}
+import scala.io.Codec
 
 object PVTools extends App {
   Log.activateInfoLevel
@@ -85,7 +69,7 @@ object PVTools extends App {
   case class CropX(cropX: String) { def x = cropX.toInt }
   case class CropY(cropY: String) { def y = cropY.toInt }
   case class CropWidth(cropWidth: String) { def w = cropWidth.toInt }
-  case class CropHeigth(cropHeight: String) { def h = cropHeight.toInt }
+  case class CropHeight(cropHeight: String) { def h = cropHeight.toInt }
 
   private val TITLE = "Photo and video import"
 
@@ -133,7 +117,7 @@ object PVTools extends App {
   private val cropX = BehaviorSubject[CropX]()
   private val cropY = BehaviorSubject[CropY]()
   private val cropWidth = BehaviorSubject[CropWidth]()
-  private val cropHeight = BehaviorSubject[CropHeigth]()
+  private val cropHeight = BehaviorSubject[CropHeight]()
 
   private val logArea = BehaviorSubject[String]()
   private val logAreaAppender = BehaviorSubject[String]()
@@ -142,35 +126,35 @@ object PVTools extends App {
     .newColumn.newColumnFPG
 
     .newRow("f:p").addLabel.text("Import path: ").cursor_HAND_CURSOR.onMouseClicked(importPathClicked)
-    .nextColumn.addTextFieldMulti("importPathTextField", 30).setValues(List()).remember("importPathTextFields").onChanged(importPaths.pam(ImportPathTexts(_)))
+    .nextColumn.addTextFieldMulti("importPathTextField", 30).setValues(List()).remember("importPathTextFields").onChanged(importPaths.pam(ImportPathTexts))
 
     .newRow.addLabel.text("Export path: ").cursor_HAND_CURSOR.onMouseClicked(exportPathClicked)
-    .nextColumn.addTextField.text("").onTextChanged(exportPath.pam(ExportPath(_))).remember("exportPath")
+    .nextColumn.addTextField.text("").onTextChanged(exportPath.pam(ExportPath)).remember("exportPath")
 
     .newRow.addLabel.text("Files to import: ")
-    .nextColumn.addTextField.text("JPG,MTS,m2ts,mp4,jpeg").onTextChanged(extensionsToImport.pam(ExtensionsToImport(_))).remember("extensionsToImport")
+    .nextColumn.addTextField.text("JPG,MTS,m2ts,mp4,jpeg").onTextChanged(extensionsToImport.pam(ExtensionsToImport)).remember("extensionsToImport")
 
     .newRow.addLabel.text("Files to convert: ")
-    .nextColumn.addTextField.text("MTS,m2ts").onTextChanged(extensionsToConvert.pam(ExtensionsToConvert(_))).remember("extensionsToConvert")
+    .nextColumn.addTextField.text("MTS,m2ts").onTextChanged(extensionsToConvert.pam(ExtensionsToConvert)).remember("extensionsToConvert")
 
     .newRow.addLabel.text("Files to resize: ")
-    .nextColumn.addTextField.text("MTS,m2ts,mp4").onTextChanged(extensionsToResize.pam(ExtensionsToResize(_))).remember("extensionsToResize")
+    .nextColumn.addTextField.text("MTS,m2ts,mp4").onTextChanged(extensionsToResize.pam(ExtensionsToResize)).remember("extensionsToResize")
 
     .newRow.addLabel.text("ffmpeg.exe location: ")
-    .nextColumn.addTextField.text("""C:\private\ffmpeg\bin\ffmpeg.exe""").onTextChanged(ffmpegPath.pam(FFMpegPath(_))).remember("ffmpeg")
+    .nextColumn.addTextField.text("""C:\private\ffmpeg\bin\ffmpeg.exe""").onTextChanged(ffmpegPath.pam(FFMpegPath)).remember("ffmpeg")
 
     .newRow.addLabel.text("ffprobe.exe location: ")
-    .nextColumn.addTextField.text("""C:\private\ffmpeg\bin\ffprobe.exe""").onTextChanged(ffprobePath.pam(FFProbePath(_))).remember("ffprobe")
+    .nextColumn.addTextField.text("""C:\private\ffmpeg\bin\ffprobe.exe""").onTextChanged(ffprobePath.pam(FFProbePath)).remember("ffprobe")
 
     .newRow.addLabel.text("exiftool.exe location: ")
-    .nextColumn.addTextField.text("""C:\private\exiftool.exe""").onTextChanged(exiftoolPath.pam(ExifToolPath(_))).remember("exiftool")
+    .nextColumn.addTextField.text("""C:\private\exiftool.exe""").onTextChanged(exiftoolPath.pam(ExifToolPath)).remember("exiftool")
 
-    .newRow.addCheckBox.text("Use already imported txt").onSelectionChanged(useAlreadyImported.pam(UseAlreadyImported(_))).remember("useAlreadyImported")
+    .newRow.addCheckBox.text("Use already imported txt").onSelectionChanged(useAlreadyImported.pam(UseAlreadyImported)).remember("useAlreadyImported")
 
     .nextColumn.addButton.text("Check to import").onAction(checkToImportClicked).enabled(enabledState)
     .newRow.span.addLabel.text("").text(checkToImportLabel)
 
-    .newRow.addCheckBox.text("Do Import").onSelectionChanged(doImport.pam(DoImport(_))).remember("doImport")
+    .newRow.addCheckBox.text("Do Import").onSelectionChanged(doImport.pam(DoImport)).remember("doImport")
 
     .nextColumn.addButton.text("Import").onAction(importClicked).enabled(enabledState)
     .newRow.span.addLabel.text(importLabel)
@@ -191,21 +175,21 @@ object PVTools extends App {
     .nextColumn.addPanelBuilder(_
       .withSeparators
       .addLabel.text("from: ")
-      .newColumn.addTextField.text("00:00:00").size(10).onTextChanged(cutFrom.pam(CutFrom(_))).remember("cutFrom")
+      .newColumn.addTextField.text("00:00:00").size(10).onTextChanged(cutFrom.pam(CutFrom)).remember("cutFrom")
       .newColumn.addLabel.text("length: ")
-      .newColumn.addTextField.text("00:00:00").size(10).onTextChanged(cutTo.pam(CutTo(_))).remember("cutTo"))
+      .newColumn.addTextField.text("00:00:00").size(10).onTextChanged(cutTo.pam(CutTo)).remember("cutTo"))
 
     .newRow.addButton.text("Crop file").disabled.onDropFiles(filesToCrop)
     .nextColumn.addPanelBuilder(_
       .withSeparators
       .addLabel.text("x: ")
-      .newColumn.addTextField.text("").size(5).onTextChanged(cropX.pam(CropX(_))).remember("cropX")
+      .newColumn.addTextField.text("").size(5).onTextChanged(cropX.pam(CropX)).remember("cropX")
       .newColumn.addLabel.text("y: ")
-      .newColumn.addTextField.text("").size(5).onTextChanged(cropY.pam(CropY(_))).remember("cropY")
+      .newColumn.addTextField.text("").size(5).onTextChanged(cropY.pam(CropY)).remember("cropY")
       .newColumn.addLabel.text("width: ")
-      .newColumn.addTextField.text("").size(5).onTextChanged(cropWidth.pam(CropWidth(_))).remember("cropW")
+      .newColumn.addTextField.text("").size(5).onTextChanged(cropWidth.pam(CropWidth)).remember("cropW")
       .newColumn.addLabel.text("height: ")
-      .newColumn.addTextField.text("").size(5).onTextChanged(cropHeight.pam(CropHeigth(_))).remember("cropH"))
+      .newColumn.addTextField.text("").size(5).onTextChanged(cropHeight.pam(CropHeight)).remember("cropH"))
 
     .newRow("f:100px:g").span.addTextArea.textAppender(logAreaAppender).text(logArea)
     .getPanel
@@ -230,11 +214,11 @@ object PVTools extends App {
     def from = params._1
     def to = params._2
   }
-  case class CropParams(private val params: (CropX, CropY, CropWidth, CropHeigth)) {
+  case class CropParams(private val params: (CropX, CropY, CropWidth, CropHeight)) {
     def x = params._1
     def y = params._2
     def width = params._3
-    def heigth = params._4
+    def height = params._4
   }
   case class Params(private val params: (ImportPathTexts, ExportPath, ExtensionsToImport, ExtensionsToConvert, ExtensionsToResize, FFMpegPath, FFProbePath, ExifToolPath, UseAlreadyImported, DoImport, CutParams, CropParams)) {
     def importPaths = params._1
@@ -246,6 +230,7 @@ object PVTools extends App {
     def ffprobePath = params._7
     def exiftoolPath = params._8
     def useAlreadyImported = params._9
+    //noinspection MutatorLikeMethodIsParameterless
     def doImport = params._10
     def cut = params._11
     def crop = params._12
@@ -257,7 +242,7 @@ object PVTools extends App {
   val params$ = ObservablePlus.combineLatest(
     importPaths, exportPath, extensionsToImport, extensionsToConvert, extensionsToResize, ffmpegPath, ffprobePath, exiftoolPath, useAlreadyImported, doImport, cutParams$, cropParams$).map(Params)
 
-  importPaths.subscribe(v => frame.resizeAndBack) // this resizeAndBack should be handled better! in the multi class
+  importPaths.subscribe(_ => frame.resizeAndBack) // this resizeAndBack should be handled better! in the multi class
 
   importPathClicked.takeLatestOf(importPaths).subscribe(_.importPaths.foreach(_.openAsFile))
   exportPathClicked.takeLatestOf(exportPath).subscribe(_.exportPath.openAsFile)
@@ -267,7 +252,7 @@ object PVTools extends App {
 
   filesToResize.withLatestOf(params$).subscribe(filesParams => execute(filesParams._1.foreach(resizeFile(filesParams._2))))
 
-  def rotateFiles(rotate: Int)(filesFfmgep: (List[File], FFMpegPath)) = execute(filesFfmgep._1.foreach(rotateFile(filesFfmgep._2, rotate, l => {})))
+  def rotateFiles(rotate: Int)(filesFfmgep: (List[File], FFMpegPath)) = execute(filesFfmgep._1.foreach(rotateFile(filesFfmgep._2, rotate, _ => {})))
   filesToRotate0.withLatestOf(ffmpegPath).subscribe(rotateFiles(0)(_))
   filesToRotate1.withLatestOf(ffmpegPath).subscribe(rotateFiles(1)(_))
   filesToRotate2.withLatestOf(ffmpegPath).subscribe(rotateFiles(2)(_))
@@ -301,7 +286,7 @@ object PVTools extends App {
       progressBarValue onNext newVal
     }
 
-    def fileProgress(file: File)(bytes: Long) = {
+    def fileProgress(bytes: Long) = {
       progressBytes += bytes
       progressBytes$.onNext(progressBytes)
       setProgress(progressBytes)
@@ -309,7 +294,7 @@ object PVTools extends App {
       Log.trace("progressBytes " + (bytes * 100 / filesToImportSizeSum))
     }
 
-    val importResults = files.par.map(file => importFile(params, fileProgress(file))(file)).toList.sortBy(_._2)
+    val importResults = files.par.map(file => importFile(params, fileProgress)(file)).toList.sortBy(_._2)
     val importSuccessful = importResults.filter(_._1.isEmpty)
     val importFailed = importResults.filter(_._1.nonEmpty)
 
@@ -465,7 +450,10 @@ object PVTools extends App {
     else {
 
       val dirs = params.importPaths.importPaths
-      val allFiles = dirs.flatMap(_.asDir.subFiles.toList)
+      var ct = 0
+      progressBarFormat.onNext("%d files checked (running...)")
+      val allFiles = dirs.flatMap(_.asDir.subFiles.map(f => { ct+=1; progressBarValue.onNext(ct); f }).toList)
+      progressBarFormat.onNext("%d files found.")
       log("All files: " + allFiles.size)
       val allExtensions = allFiles.map(_.extension).distinct.map(_.toLowerCase.trim).map(_.substring(1)).toSet
       log("All extensions: " + allExtensions.mkString(", "))
@@ -488,7 +476,7 @@ object PVTools extends App {
 
       checkToImportLabel.onNext(filesToImport.size + " files to import, " + (filesToImportSizeSum / 1024 / 1024) + "MB")
       Log.info("Checking files to import: " + filesToImport.size + " files.")
-      if (filesToImport.nonEmpty) frame.state_Normal.visible.toFront
+      if (filesToImport.nonEmpty) frame.state_Normal.visible.toFront()
 
       filesToImport.sortBy(_.length).reverse
     }
@@ -511,13 +499,13 @@ object PVTools extends App {
 
   private def exifDateTime(file: File, exiftoolPath: String) = {
     val params = List(
-    exiftoolPath    
+    exiftoolPath
         , """-T"""
         ,"""-DateTimeOriginal"""
         ,s""""$file""""
     )
     val res = RuntimePlus.exec(params, Codec.ISO8859)
-    
+
     val exifDateTimeOption = res.output
     Log.debug("Result: " + exifDateTimeOption)
     if (exifDateTimeOption.nonEmpty) {
@@ -542,7 +530,7 @@ object PVTools extends App {
   private def cutFile(params: Params)(fileToCut: File): Unit = {
     val targetFileName = fileToCut.extendFileNameWith("_cut")
     log("Cut video " + fileToCut + " to " + targetFileName)
-    val res = runFFMpeg(params.ffmpegPath.ffmpegPath, fileToCut, targetFileName, dontcare => {},
+    val res = runFFMpeg(params.ffmpegPath.ffmpegPath, fileToCut, targetFileName, _ => {},
       CUT(params.cut.from.cutFrom, params.cut.to.cutTo),
       CODEC_AUDIO_COPY, CODEC_VIDEO_COPY)
 
@@ -552,37 +540,37 @@ object PVTools extends App {
   private def cropFile(params: Params)(fileToCrop: File): Unit = {
     val targetFileName = fileToCrop.extendFileNameWith("_crop")
     log("Crop video " + fileToCrop + " to " + targetFileName)
-    val res = runFFMpeg(params.ffmpegPath.ffmpegPath, fileToCrop, targetFileName, dontcare => {},
-      CROP(params.crop.x.x, params.crop.y.y, params.crop.width.w, params.crop.heigth.h))
+    val res = runFFMpeg(params.ffmpegPath.ffmpegPath, fileToCrop, targetFileName, _ => {},
+      CROP(params.crop.x.x, params.crop.y.y, params.crop.width.w, params.crop.height.h))
     targetFileName.setLastModified(fileToCrop.lastModified)
     log("Crop video result " + res)
 
   }
   private def resizeFile(params: Params)(fileToResize: File): Unit = {
     if (isVideoToResize(params.extensionsToResize)(fileToResize)) {
-      val resizeRes = TryCatch({
+      TryCatch({
         val resizeTargetFileName = fileToResize.addSubDir("resized")
         log("Resize video " + fileToResize + " to " + resizeTargetFileName)
 
         val res = resizeFile(720, params.ffmpegPath.ffmpegPath, params.ffprobePath.ffprobePath, fileToResize, resizeTargetFileName)
         resizeTargetFileName.setLastModified(fileToResize.lastModified)
-        //        println("Importt " + fileToResize)
+        //        println("Import " + fileToResize)
         //Files.setAttribute(resizeTargetFileName.toPath, "creationTime", FileTime.from(fileToImport.creationTime))
-        //        println("Importtt")
+        //        println("Import")
         //                  println("---")
         //                  println("E " + res.exitValue)
         //                  println("Output " + res.output)
-        //                  println("Erroe " + res.errorOutput)
+        //                  println("Error " + res.errorOutput)
         //                  println("---")
         log("Resize video result " + res)
         res
       }, (e: Throwable) => println("Resizing error: " + e.getMessage))
 
     } else if (isImageToResize("jpg,JPG,jpeg,JPEG")(fileToResize)) {
-      val resizeRes = TryCatch({
+       TryCatch({
         val resizeTargetFileName = fileToResize.addSubDir("resized")
         log("Resize image " + fileToResize + " to " + resizeTargetFileName)
-        val res = runFFMpeg(params.ffmpegPath.ffmpegPath, fileToResize, resizeTargetFileName, /*FIXME*/ dontcare => {}, VF(SCALE_HEIGHT_NOOVERSIZE(1080)))
+        val res = runFFMpeg(params.ffmpegPath.ffmpegPath, fileToResize, resizeTargetFileName, /*FIXME*/ _ => {}, VF(SCALE_HEIGHT_NOOVERSIZE(1080)))
         resizeTargetFileName.setLastModified(fileToResize.lastModified)
         //Files.setAttribute(resizeTargetFileName.toPath, "creationTime", FileTime.from(fileToImport.creationTime))
         log("Resize image result " + res)
@@ -592,8 +580,8 @@ object PVTools extends App {
   }
 
   //private def resizeFile_(height: Int, ffmpegPath: String, ffprobePath: String)(inFile: File): Unit = resizeFile(height, ffmpegPath, ffprobePath, inFile, inFile.addSubDir("resized"))
-  private def resizeFile(height: Int, ffmpegPath: String, ffprobePath: String, inFile: File, outFile: File): Unit = {
-    Log.info(inFile);
+  def resizeFile(height: Int, ffmpegPath: String, ffprobePath: String, inFile: File, outFile: File): Unit = {
+    Log.info(inFile)
     val sizeCmd = ffprobePath + s""" -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "${inFile.getAbsolutePath}" """
 
     val video_width_x_height = sizeCmd.executeAsProcess.trim
@@ -609,18 +597,18 @@ object PVTools extends App {
     else (video_width, video_height)
 
     val widthPrimes = resolution._1.primeFactors.toList
-    val heigthPrimes = resolution._2.primeFactors.toList
-    val commonPrimes = widthPrimes.intersect(heigthPrimes)
-    val dividerCombinations = (1 to commonPrimes.size).map(commonPrimes.combinations(_)).flatten
-    val dividers = List(1) ++ (dividerCombinations.map(_.product))
+    val heightPrimes = resolution._2.primeFactors.toList
+    val commonPrimes = widthPrimes.intersect(heightPrimes)
+    val dividerCombinations = (1 to commonPrimes.size).flatMap(commonPrimes.combinations)
+    val dividers = List(1) ++ dividerCombinations.map(_.product)
     val dividedResolutions = dividers.map(divider => (resolution._1 / divider, resolution._2 / divider))
     val evenDividedResolutions = dividedResolutions.filter(wh => wh._1 % 2 == 0 && wh._2 % 2 == 0)
     val resolutionClosestToHeight = evenDividedResolutions.sortBy(wh => (wh._2 - height).abs)
-    val resizeHeight = resolutionClosestToHeight.lift(0).map(_._2)
+    val resizeHeight = resolutionClosestToHeight.headOption.map(_._2)
 
     //    log("Size of file " + inFile)
     //    log((video_rotate.toInt, resolution))
-    //    log((widthPrimes, heigthPrimes))
+    //    log((widthPrimes, heightPrimes))
     //    log(commonPrimes)
     //    log(dividerCombinations)
     //    log(dividers)
@@ -633,7 +621,7 @@ object PVTools extends App {
     else {
       val height = resizeHeight.get
       log("Resize height=" + height + " " + inFile + " to " + outFile)
-      log("Resize exit code: " + runFFMpeg(ffmpegPath, inFile, outFile, dontcare => {},
+      log("Resize exit code: " + runFFMpeg(ffmpegPath, inFile, outFile, _ => {},
         VF(SCALE_HEIGHT(height), DESHAKE),
         CODEC_VIDEO_LIBX264,
         CONSTANT_RATE_FACTOR_VISUALLY_LOSSLESS,
